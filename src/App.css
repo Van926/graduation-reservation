@@ -26,7 +26,7 @@
 }
 
 .form-description {
-  font-size: 14px;
+  font-size: 15px;
   color: #4b5563;
   margin-bottom: 30;
   text-align: center;
@@ -42,10 +42,11 @@
 
 /* Form Labels */
 .form-label {
-  font-size: 14px;
+  font-size: 16px;
   font-weight: 500;
   color: #374151;
-  margin-bottom: -12px;
+  margin-bottom: -5px;
+  margin-top: 10px;
 }
 
 /* Required Asterisk */
@@ -58,9 +59,9 @@
 .form-input {
   width: 100%;
   padding: 8px;
-  border: 1px solid #d1d5db;
+  border: 1px solid #000000;
   border-radius: 4px;
-  font-size: 16px;
+  font-size: 14px;
   font-family: inherit;
   transition: border-color 0.2s;
 }
@@ -115,7 +116,7 @@
 }
 
 .qr-parent-label {
-  font-size: 14px;
+  font-size: 16px;
   font-weight: 500;
   color: #374151;
 }
