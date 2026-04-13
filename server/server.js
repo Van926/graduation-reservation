@@ -99,6 +99,36 @@ app.post("/api/send-qr-email", async (req, res) => {
   }
 });
 
+// Check for duplicate student number endpoint
+app.post("/api/check-student-number", async (req, res) => {
+  try {
+    const { studentNumber } = req.body;
+
+    if (!studentNumber) {
+      return res.status(400).json({ error: "Student number is required" });
+    }
+
+    const { data, error } = await supabase
+      .from("registrations")
+      .select("student_number")
+      .eq("student_number", studentNumber);
+
+    if (error) {
+      console.error("Supabase error:", error);
+      return res.status(500).json({ error: "Failed to check student number", details: error.message });
+    }
+
+    if (data && data.length > 0) {
+      return res.json({ exists: true, message: "Student number already registered" });
+    }
+
+    res.json({ exists: false, message: "Student number is available" });
+  } catch (error) {
+    console.error("Error checking student number:", error);
+    res.status(500).json({ error: "Failed to check student number", details: error.message });
+  }
+});
+
 // Save form data to Supabase endpoint
 app.post("/api/save-registration", async (req, res) => {
   try {

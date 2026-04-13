@@ -167,3 +167,12 @@
   background-color: #ecfdf5;
   border-radius: 4px;
 }
+
+/* Error Message */
+.error-message {
+  color: #ef4444;
+  font-size: 13px;
+  margin-top: -12px;
+  margin-bottom: 0;
+  padding: 4px 0;
+}

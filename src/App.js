@@ -13,6 +13,7 @@ export default function App() {
   const [submitted, setSubmitted] = useState(false);
   const [loading, setLoading] = useState(false);
   const [emailSent, setEmailSent] = useState(false);
+  const [studentNumberError, setStudentNumberError] = useState("");
 
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -21,9 +22,48 @@ export default function App() {
       return;
     }
     
-    // Save to Supabase
-    saveToSupabase();
-    setSubmitted(true);
+    // Check for duplicate student number
+    checkStudentNumber();
+  };
+
+  const checkStudentNumber = async () => {
+    try {
+      const response = await fetch("http://localhost:5000/api/check-student-number", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          studentNumber,
+        }),
+      });
+
+      if (!response.ok) {
+        const contentType = response.headers.get("content-type");
+        if (contentType && contentType.includes("application/json")) {
+          const data = await response.json();
+          setStudentNumberError(data.error || "Failed to check student number");
+        } else {
+          setStudentNumberError("Server error. Make sure the backend server is running on port 5000.");
+        }
+        return;
+      }
+
+      const data = await response.json();
+
+      if (data.exists) {
+        setStudentNumberError("This student number is already registered. Please use a different student number.");
+        return;
+      }
+
+      // Student number is unique, clear error and proceed with form
+      setStudentNumberError("");
+      saveToSupabase();
+      setSubmitted(true);
+    } catch (error) {
+      console.error("Error:", error);
+      setStudentNumberError("Connection error. Make sure the backend server is running on port 5000.");
+    }
   };
 
   const saveToSupabase = async () => {
@@ -44,10 +84,21 @@ export default function App() {
         }),
       });
 
+      if (!response.ok) {
+        const contentType = response.headers.get("content-type");
+        if (contentType && contentType.includes("application/json")) {
+          const data = await response.json();
+          console.error("Error saving to Supabase:", data.error);
+        } else {
+          console.error("Server error - not valid JSON response");
+        }
+        return;
+      }
+
       const data = await response.json();
 
-      if (!response.ok) {
-        console.error("Error saving to Supabase:", data.error);
+      if (data.success) {
+        console.log("Registration saved successfully");
       }
     } catch (error) {
       console.error("Error:", error);
@@ -92,9 +143,21 @@ export default function App() {
         }),
       });
 
+      if (!response.ok) {
+        const contentType = response.headers.get("content-type");
+        if (contentType && contentType.includes("application/json")) {
+          const data = await response.json();
+          alert("Error sending email: " + (data.error || "Unknown error"));
+        } else {
+          alert("Server error. Please make sure the backend server is running on port 5000.");
+        }
+        setLoading(false);
+        return;
+      }
+
       const data = await response.json();
 
-      if (response.ok) {
+      if (data.success) {
         setEmailSent(true);
         alert("QR codes sent to your email successfully!");
       } else {
@@ -102,7 +165,7 @@ export default function App() {
       }
     } catch (error) {
       console.error("Error:", error);
-      alert("Failed to send email. Make sure the server is running on port 5000.");
+      alert("Connection error. Make sure the backend server is running on port 5000.");
     } finally {
       setLoading(false);
     }
@@ -131,9 +194,15 @@ export default function App() {
               type="text"
               placeholder="Student Number"
               value={studentNumber}
-              onChange={(e) => setStudentNumber(e.target.value)}
+              onChange={(e) => {
+                setStudentNumber(e.target.value);
+                setStudentNumberError("");
+              }}
               className="form-input"
             />
+            {studentNumberError && (
+              <p className="error-message">{studentNumberError}</p>
+            )}
 
             <label className="form-label">Course <span className="required-asterisk">*</span></label>
             <input
