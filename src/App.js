@@ -197,7 +197,8 @@ export default function App() {
               placeholder="Student Number"
               value={studentNumber}
               onChange={(e) => {
-                setStudentNumber(e.target.value);
+                const value = e.target.value.replace(/[^0-9]/g, "");
+                setStudentNumber(value);
                 setStudentNumberError("");
               }}
               className="form-input"
@@ -229,7 +230,10 @@ export default function App() {
               type="tel"
               placeholder="Contact Number"
               value={contactNumber}
-              onChange={(e) => setContactNumber(e.target.value)}
+              onChange={(e) => {
+                const value = e.target.value.replace(/[^0-9]/g, "");
+                setContactNumber(value);
+              }}
               className="form-input"
             />
 
