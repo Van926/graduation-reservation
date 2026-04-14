@@ -9,22 +9,22 @@ const app = express();
 app.use(cors());
 app.use(express.json({ limit: "10mb" }));
 
-// Initialize Supabase
+
 const supabase = createClient(
   process.env.SUPABASE_URL,
   process.env.SUPABASE_ANON_KEY
 );
 
-// Configure email service
+
 const transporter = nodemailer.createTransport({
   service: "gmail",
   auth: {
     user: process.env.EMAIL_USER,
-    pass: process.env.EMAIL_PASSWORD, // Use app-specific password for Gmail
+    pass: process.env.EMAIL_PASSWORD, 
   },
 });
 
-// Helper function to generate QR code as data URL
+
 const generateQRCodeDataUrl = async (data) => {
   try {
     return await QRCode.toDataURL(data);

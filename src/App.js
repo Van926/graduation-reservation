@@ -178,7 +178,10 @@ export default function App() {
          LCC Graduation Reservation
         </h1>
         <p1 className="form-description">
-          Fill out the form below to reserve your spot for the LCC graduation ceremony. You can reserve up to 2 spots only. After submitting, a QR code will be generated for each reserved spot. Show the QR code(s) during graduation to gain entry. You can also choose to have the QR code(s) sent to your email for convenience.
+          Fill out the form below to reserve your spot for the LCC graduation ceremony. 
+          You can reserve up to 2 spots only. After submitting, a QR code will be generated for each reserved spot. 
+          Show the QR code(s) during graduation to gain entry. 
+          The QR code(s) will also be sent to your email for safekeeping.
         </p1>
         {!submitted ? (
           <form onSubmit={handleSubmit} className="form">
