@@ -15,6 +15,7 @@
   box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
   width: 100%;
   max-width: 448px;
+  margin: 20px;
 }
 
 /* Title */
@@ -31,6 +32,7 @@
   margin-bottom: 30;
   text-align: center;
   justify-content: center;
+  align-items: center;
 }
 
 /* Form */

@@ -56,7 +56,7 @@ export default function App() {
         return;
       }
 
-      // Student number is unique, clear error and proceed with form
+      
       setStudentNumberError("");
       saveToSupabase();
       setSubmitted(true);
@@ -246,7 +246,7 @@ export default function App() {
               className="form-input"
             />
 
-            <label className="form-label">Parent 2 Name</label>
+            <label className="form-label">Parent 2 Name(Optional)</label>
             <input
               type="text"
               placeholder="Parent 2 Name"
@@ -279,7 +279,7 @@ export default function App() {
             </div>
 
             <p className="qr-text">
-              Show {parent2 ? "these QR codes" : "this QR code"} during graduation
+              Show {parent2 ? "these QR codes" : "this QR code"} during graduation. Do not share these to others it is a one time use only.
             </p>
 
             {emailSent ? (

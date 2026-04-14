@@ -77,7 +77,9 @@ app.post("/api/send-qr-email", async (req, res) => {
       <p>Your graduation reservation QR codes have been generated and are attached to this email.</p>
       <p><strong>Instructions:</strong> Please show the QR code(s) during graduation.</p>
       <p>${parent2 ? `<strong>You have QR codes for both parents (${parent1} and ${parent2}).</strong>` : `<strong>Your QR code for ${parent1}.</strong>`}</p>
+      <p><strong>Warning:</strong>Do not share these to others as they are for one-time use only.</p>
       <p>Best regards,<br>Graduation Team</p>
+      <p><strong>This is a system-generated email. Please do not reply.</strong></p>
     `;
 
     // Send email
