@@ -1,6 +1,7 @@
 import { useState } from "react";
 import QRCode from "react-qr-code";
 import "./App.css";
+import QRCodeLib from "qrcode";
 
 export default function App() {
   const [studentName, setStudentName] = useState("");
@@ -14,6 +15,10 @@ export default function App() {
   const [loading, setLoading] = useState(false);
   const [emailSent, setEmailSent] = useState(false);
   const [studentNumberError, setStudentNumberError] = useState("");
+
+  // Generate QR code data early so it's available for saveToSupabase
+  const qrDataParent1 = `${parent1} approved`;
+  const qrDataParent2 = parent2 ? `${parent2} approved` : null;
 
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -68,6 +73,23 @@ export default function App() {
 
   const saveToSupabase = async () => {
     try {
+      console.log("=== saveToSupabase started ===");
+      console.log("QR Data Parent1:", qrDataParent1);
+      console.log("QR Data Parent2:", qrDataParent2);
+
+      // Generate QR code data URLs
+      console.log("Generating QR code for Parent1...");
+      const qr1DataUrl = await QRCodeLib.toDataURL(qrDataParent1);
+      console.log("QR1 generated, length:", qr1DataUrl.length);
+
+      let qr2DataUrl = null;
+      if (qrDataParent2) {
+        console.log("Generating QR code for Parent2...");
+        qr2DataUrl = await QRCodeLib.toDataURL(qrDataParent2);
+        console.log("QR2 generated, length:", qr2DataUrl.length);
+      }
+
+      console.log("Sending to backend...");
       const response = await fetch("http://localhost:5000/api/save-registration", {
         method: "POST",
         headers: {
@@ -81,14 +103,19 @@ export default function App() {
           contactNumber,
           parent1,
           parent2,
+          qrCodeParent1: qr1DataUrl,
+          qrCodeParent2: qr2DataUrl,
         }),
       });
+
+      console.log("Response status:", response.status);
 
       if (!response.ok) {
         const contentType = response.headers.get("content-type");
         if (contentType && contentType.includes("application/json")) {
           const data = await response.json();
           console.error("Error saving to Supabase:", data.error);
+          console.error("Error details:", data.details);
         } else {
           console.error("Server error - not valid JSON response");
         }
@@ -101,13 +128,11 @@ export default function App() {
         console.log("Registration saved successfully");
       }
     } catch (error) {
+      console.error("=== Exception in saveToSupabase ===");
       console.error("Error:", error);
+      console.error("Stack trace:", error.stack);
     }
   };
-
-  const qrDataParent1 = `${parent1} approved`;
-
-  const qrDataParent2 = parent2 ? `${parent2} approved` : null;
 
   const handleSendEmail = async () => {
     setLoading(true);

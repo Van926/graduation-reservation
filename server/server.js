@@ -149,40 +149,130 @@ app.post("/api/check-student-number", async (req, res) => {
 // Save form data to Supabase endpoint
 app.post("/api/save-registration", async (req, res) => {
   try {
-    const { studentName, studentNumber, course, email, contactNumber, parent1, parent2 } = req.body;
+    const { studentName, studentNumber, course, email, contactNumber, parent1, parent2, qrCodeParent1, qrCodeParent2 } = req.body;
+
+    console.log("=== save-registration endpoint ===");
+    console.log("Received:", { studentName, studentNumber, course, email, contactNumber, parent1, parent2 });
 
     if (!studentName || !studentNumber || !course || !email || !contactNumber || !parent1) {
+      console.log("Missing required fields");
       return res.status(400).json({ error: "Missing required fields" });
     }
 
-    const { data, error } = await supabase
-      .from("registrations")
-      .insert([
-        {
-          student_name: studentName,
-          student_number: studentNumber,
-          course: course,
-          email: email,
-          contact_number: contactNumber,
-          parent1: parent1,
-          parent2: parent2 || null,
-          created_at: new Date().toISOString(),
-        },
-      ]);
+    console.log("QR1 length:", qrCodeParent1?.length);
+    console.log("QR2 length:", qrCodeParent2?.length);
 
-    if (error) {
-      console.error("Supabase error:", error);
-      return res.status(500).json({ error: "Failed to save registration", details: error.message });
+    // First, try without QR codes to test basic registration
+    console.log("Attempting to insert basic record (without QR codes)...");
+    
+    const basicData = {
+      student_name: studentName,
+      student_number: studentNumber,
+      course: course,
+      email: email,
+      contact_number: contactNumber,
+      parent1: parent1,
+      parent2: parent2 || null,
+      created_at: new Date().toISOString(),
+    };
+
+    const { data: basicData_result, error: basicError } = await supabase
+      .from("registrations")
+      .insert([basicData])
+      .select();
+
+    if (basicError) {
+      console.error("BASIC INSERT FAILED:");
+      console.error("Code:", basicError.code);
+      console.error("Message:", basicError.message);
+      console.error("Details:", basicError.details);
+      return res.status(500).json({ 
+        error: "Failed to save registration",
+        details: basicError.message,
+        code: basicError.code
+      });
+    }
+
+    console.log("✓ Basic insert successful");
+    console.log("Inserted record ID:", basicData_result?.[0]?.id);
+
+    // Now try to add QR codes if they exist (UPDATE the record)
+    if ((qrCodeParent1 || qrCodeParent2) && basicData_result?.[0]?.id) {
+      console.log("Now attempting to update with QR codes...");
+      
+      const updateData = {};
+      if (qrCodeParent1) updateData.qr_code_parent1 = qrCodeParent1;
+      if (qrCodeParent2) updateData.qr_code_parent2 = qrCodeParent2;
+
+      const { data: updateResult, error: updateError } = await supabase
+        .from("registrations")
+        .update(updateData)
+        .eq("id", basicData_result[0].id)
+        .select();
+
+      if (updateError) {
+        console.error("⚠ UPDATE WITH QR CODES failed (but basic registration was saved):");
+        console.error("Code:", updateError.code);
+        console.error("Message:", updateError.message);
+        // Don't return error - registration already saved
+        console.log("Continuing anyway - basic registration is saved");
+      } else {
+        console.log("✓ QR codes added successfully");
+      }
     }
 
     res.json({
       success: true,
       message: "Registration saved successfully",
-      data: data,
+      data: basicData_result,
+    });
+
+  } catch (error) {
+    console.error("=== EXCEPTION ===");
+    console.error("Error:", error);
+    console.error("Stack:", error.stack);
+    res.status(500).json({ 
+      error: "Failed to save registration", 
+      details: error.message 
+    });
+  }
+});
+
+// Test endpoint to check Supabase table structure
+app.get("/api/test-supabase", async (req, res) => {
+  try {
+    console.log("=== Testing Supabase connection ===");
+    
+    // Try to fetch one record to see the table structure
+    const { data, error } = await supabase
+      .from("registrations")
+      .select("*")
+      .limit(1);
+
+    if (error) {
+      console.error("Error connecting to Supabase:", error);
+      return res.status(500).json({ 
+        error: "Failed to connect to Supabase",
+        details: error.message,
+        code: error.code
+      });
+    }
+
+    console.log("Supabase connection successful");
+    console.log("Sample record structure:", data?.[0] ? Object.keys(data[0]) : "No records yet");
+
+    res.json({
+      success: true,
+      message: "Supabase connection successful",
+      columns: data?.[0] ? Object.keys(data[0]) : "No data yet",
+      sampleRecord: data?.[0] || null
     });
   } catch (error) {
-    console.error("Error saving registration:", error);
-    res.status(500).json({ error: "Failed to save registration", details: error.message });
+    console.error("Exception:", error);
+    res.status(500).json({ 
+      error: "Failed to test Supabase",
+      details: error.message 
+    });
   }
 });
 
