@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import QRCode from "react-qr-code";
 import "./App.css";
 import QRCodeLib from "qrcode";
+import { useSearchParams } from "react-router-dom";
 
 export default function App() {
   const [studentName, setStudentName] = useState("");
@@ -19,10 +20,18 @@ export default function App() {
   const [parent2Scanned, setParent2Scanned] = useState(false);
   const [parent1ScannedAt, setParent1ScannedAt] = useState(null);
   const [parent2ScannedAt, setParent2ScannedAt] = useState(null);
+  const [searchParams] = useSearchParams();
+  const parentName = searchParams.get("parent");
+  const [message, setMessage] = useState("Checking QR code...");
 
-  // Generate QR code data early so it's available for saveToSupabase
-  const qrDataParent1 = `${parent1} approved`;
-  const qrDataParent2 = parent2 ? `${parent2} approved` : null;
+
+  
+const qrDataParent1 = `${window.location.origin}/scan?parent=${encodeURIComponent(parent1)}`;
+
+const qrDataParent2 = parent2
+  ? `${window.location.origin}/scan?parent=${encodeURIComponent(parent2)}`
+  : null;
+
 
   // Check QR scan status when component submitted
   useEffect(() => {
@@ -235,6 +244,32 @@ export default function App() {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    const scanQr = async () => {
+      const response = await fetch("http://localhost:5000/api/scan-qr", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ parentName })
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        setMessage("QR code accepted");
+      } else if (data.inactive) {
+        setMessage(`QR code already used at ${data.scannedAt}`);
+      } else {
+        setMessage(data.error || "Failed to scan QR code");
+      }
+    };
+
+    if (parentName) {
+      scanQr();
+    }
+  }, [parentName]);
 
   return (
     <div className="app-container">
