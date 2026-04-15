@@ -105,25 +105,9 @@ export default function App() {
     }
   };
 
-  const qrDataParent1 = JSON.stringify({
-    studentName,
-    studentNumber,
-    course,
-    email,
-    contactNumber,
-    parentName: parent1,
-    type: "Graduation Reservation"
-  });
+  const qrDataParent1 = `${parent1} approved`;
 
-  const qrDataParent2 = parent2 ? JSON.stringify({
-    studentName,
-    studentNumber,
-    course,
-    email,
-    contactNumber,
-    parentName: parent2,
-    type: "Graduation Reservation"
-  }) : null;
+  const qrDataParent2 = parent2 ? `${parent2} approved` : null;
 
   const handleSendEmail = async () => {
     setLoading(true);
@@ -210,14 +194,20 @@ export default function App() {
               <p className="error-message">{studentNumberError}</p>
             )}
 
-            <label className="form-label">Course <span className="required-asterisk">*</span></label>
-            <input
-              type="text"
-              placeholder="Course"
+            <label className="form-label">Department <span className="required-asterisk">*</span></label>
+            <select
               value={course}
               onChange={(e) => setCourse(e.target.value)}
               className="form-input"
-            />
+            >
+              <option value="">Department</option>
+              <option value="CELA">CELA</option>
+              <option value="CON">CON</option>
+              <option value="CBA">CBA</option>
+              <option value="CCJE">CCJE</option>
+              <option value="CCTE">CCTE</option>
+              <option value="CITHM">CITHM</option>
+            </select>
 
             <label className="form-label">Email <span className="required-asterisk">*</span></label>
             <input
