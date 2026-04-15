@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useSearchParams } from "react-router-dom";
 import QRCode from "react-qr-code";
 import QRCodeLib from "qrcode";
@@ -27,14 +27,12 @@ export default function App() {
   const parentName = searchParams.get("parent");
   const [message, setMessage] = useState("Checking QR code...");
 
-  // QR data becomes a URL that can be opened/scanned externally
   const qrDataParent1 = `${window.location.origin}/?parent=${encodeURIComponent(parent1)}`;
-
   const qrDataParent2 = parent2
     ? `${window.location.origin}/?parent=${encodeURIComponent(parent2)}`
     : null;
 
-  // When page is opened from a QR code, automatically scan it
+  // ✅ Scan QR when opened from link
   useEffect(() => {
     const scanQr = async () => {
       try {
@@ -51,7 +49,9 @@ export default function App() {
         if (data.success) {
           setMessage("QR code accepted");
         } else if (data.inactive) {
-          setMessage(`QR code already used at ${new Date(data.scannedAt).toLocaleString()}`);
+          setMessage(
+            `QR code already used at ${new Date(data.scannedAt).toLocaleString()}`
+          );
         } else {
           setMessage(data.error || "Failed to scan QR code");
         }
@@ -66,61 +66,19 @@ export default function App() {
     }
   }, [parentName]);
 
-  // If user is opening the page from a QR code, show scan result page only
-  useEffect(() => {
-  if (submitted) {
-    checkQRScans();
-
-    const interval = setInterval(() => {
-      checkQRScans();
-    }, 5000);
-
-    return () => clearInterval(interval);
-  }
-}, [submitted, parent1, parent2]);
-
-// ✅ AFTER all hooks
-if (parentName) {
-  return (
-    <div className="app-container">
-      <div className="form-card">
-        <h1 className="form-title">LCC Graduation QR Scanner</h1>
-
-        <div style={{ textAlign: "center", padding: "30px 0" }}>
-          <p
-            style={{
-              fontSize: "24px",
-              fontWeight: "bold",
-              color: message.includes("accepted")
-                ? "green"
-                : message.includes("already used")
-                ? "red"
-                : "#333",
-            }}
-          >
-            {message}
-          </p>
-
-          {message.includes("accepted") && (
-            <p style={{ marginTop: "12px", fontSize: "18px" }}>
-              Entry approved for {parentName}
-            </p>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-  const checkQRScans = async () => {
+  // ✅ FIXED: useCallback added
+  const checkQRScans = useCallback(async () => {
     try {
-      const response1 = await fetch("http://localhost:5000/api/check-qr-status", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ parentName: parent1 }),
-      });
+      const response1 = await fetch(
+        "http://localhost:5000/api/check-qr-status",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ parentName: parent1 }),
+        }
+      );
 
       if (response1.ok) {
         const data1 = await response1.json();
@@ -129,13 +87,16 @@ if (parentName) {
       }
 
       if (parent2) {
-        const response2 = await fetch("http://localhost:5000/api/check-qr-status", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({ parentName: parent2 }),
-        });
+        const response2 = await fetch(
+          "http://localhost:5000/api/check-qr-status",
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ parentName: parent2 }),
+          }
+        );
 
         if (response2.ok) {
           const data2 = await response2.json();
@@ -146,7 +107,53 @@ if (parentName) {
     } catch (error) {
       console.error("Error checking QR scans:", error);
     }
-  };
+  }, [parent1, parent2]);
+
+  // ✅ FIXED: dependency added
+  useEffect(() => {
+    if (submitted) {
+      checkQRScans();
+
+      const interval = setInterval(() => {
+        checkQRScans();
+      }, 5000);
+
+      return () => clearInterval(interval);
+    }
+  }, [submitted, checkQRScans]);
+
+  // ✅ IMPORTANT: return AFTER all hooks
+  if (parentName) {
+    return (
+      <div className="app-container">
+        <div className="form-card">
+          <h1 className="form-title">LCC Graduation QR Scanner</h1>
+
+          <div style={{ textAlign: "center", padding: "30px 0" }}>
+            <p
+              style={{
+                fontSize: "24px",
+                fontWeight: "bold",
+                color: message.includes("accepted")
+                  ? "green"
+                  : message.includes("already used")
+                  ? "red"
+                  : "#333",
+              }}
+            >
+              {message}
+            </p>
+
+            {message.includes("accepted") && (
+              <p style={{ marginTop: "12px", fontSize: "18px" }}>
+                Entry approved for {parentName}
+              </p>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -168,13 +175,16 @@ if (parentName) {
 
   const checkStudentNumber = async () => {
     try {
-      const response = await fetch("http://localhost:5000/api/check-student-number", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ studentNumber }),
-      });
+      const response = await fetch(
+        "http://localhost:5000/api/check-student-number",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ studentNumber }),
+        }
+      );
 
       const data = await response.json();
 
@@ -201,23 +211,26 @@ if (parentName) {
         qr2DataUrl = await QRCodeLib.toDataURL(qrDataParent2);
       }
 
-      const response = await fetch("http://localhost:5000/api/save-registration", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          studentName,
-          studentNumber,
-          course,
-          email,
-          contactNumber,
-          parent1,
-          parent2,
-          qrCodeParent1: qr1DataUrl,
-          qrCodeParent2: qr2DataUrl,
-        }),
-      });
+      const response = await fetch(
+        "http://localhost:5000/api/save-registration",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            studentName,
+            studentNumber,
+            course,
+            email,
+            contactNumber,
+            parent1,
+            parent2,
+            qrCodeParent1: qr1DataUrl,
+            qrCodeParent2: qr2DataUrl,
+          }),
+        }
+      );
 
       const data = await response.json();
 
@@ -234,20 +247,23 @@ if (parentName) {
     setLoading(true);
 
     try {
-      const response = await fetch("http://localhost:5000/api/send-qr-email", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          studentName,
-          email,
-          parent1,
-          parent2,
-          qrDataParent1,
-          qrDataParent2,
-        }),
-      });
+      const response = await fetch(
+        "http://localhost:5000/api/send-qr-email",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            studentName,
+            email,
+            parent1,
+            parent2,
+            qrDataParent1,
+            qrDataParent2,
+          }),
+        }
+      );
 
       const data = await response.json();
 
@@ -271,34 +287,11 @@ if (parentName) {
 
         {!submitted ? (
           <form onSubmit={handleSubmit} className="form">
-            <input
-              type="text"
-              placeholder="Student Name"
-              value={studentName}
-              onChange={(e) => setStudentName(e.target.value)}
-              className="form-input"
-            />
+            <input type="text" placeholder="Student Name" value={studentName} onChange={(e) => setStudentName(e.target.value)} className="form-input" />
+            <input type="text" placeholder="Student Number" value={studentNumber} onChange={(e) => { setStudentNumber(e.target.value.replace(/[^0-9]/g, "")); setStudentNumberError(""); }} className="form-input" />
+            {studentNumberError && <p className="error-message">{studentNumberError}</p>}
 
-            <input
-              type="text"
-              placeholder="Student Number"
-              value={studentNumber}
-              onChange={(e) => {
-                setStudentNumber(e.target.value.replace(/[^0-9]/g, ""));
-                setStudentNumberError("");
-              }}
-              className="form-input"
-            />
-
-            {studentNumberError && (
-              <p className="error-message">{studentNumberError}</p>
-            )}
-
-            <select
-              value={course}
-              onChange={(e) => setCourse(e.target.value)}
-              className="form-input"
-            >
+            <select value={course} onChange={(e) => setCourse(e.target.value)} className="form-input">
               <option value="">Select Course</option>
               <option value="CELA">CELA</option>
               <option value="CBA">CBA</option>
@@ -308,43 +301,12 @@ if (parentName) {
               <option value="CCTE">CCTE</option>
             </select>
 
-            <input
-              type="email"
-              placeholder="Email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className="form-input"
-            />
+            <input type="email" placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} className="form-input" />
+            <input type="text" placeholder="Contact Number" value={contactNumber} onChange={(e) => setContactNumber(e.target.value.replace(/[^0-9]/g, ""))} className="form-input" />
+            <input type="text" placeholder="Parent 1 Name" value={parent1} onChange={(e) => setParent1(e.target.value)} className="form-input" />
+            <input type="text" placeholder="Parent 2 Name (Optional)" value={parent2} onChange={(e) => setParent2(e.target.value)} className="form-input" />
 
-            <input
-              type="text"
-              placeholder="Contact Number"
-              value={contactNumber}
-              onChange={(e) =>
-                setContactNumber(e.target.value.replace(/[^0-9]/g, ""))
-              }
-              className="form-input"
-            />
-
-            <input
-              type="text"
-              placeholder="Parent 1 Name"
-              value={parent1}
-              onChange={(e) => setParent1(e.target.value)}
-              className="form-input"
-            />
-
-            <input
-              type="text"
-              placeholder="Parent 2 Name (Optional)"
-              value={parent2}
-              onChange={(e) => setParent2(e.target.value)}
-              className="form-input"
-            />
-
-            <button type="submit" className="submit-btn">
-              Generate QR Code
-            </button>
+            <button type="submit" className="submit-btn">Generate QR Code</button>
           </form>
         ) : (
           <div className="qr-section">
@@ -353,69 +315,23 @@ if (parentName) {
             <div className="qr-container">
               <div className={`qr-item ${parent1Scanned ? "scanned" : ""}`}>
                 <p className="qr-parent-label">{parent1}</p>
-
                 <div className="qr-wrapper">
                   <QRCode value={qrDataParent1} />
-
-                  {parent1Scanned && (
-                    <div className="qr-overlay">
-                      <div className="qr-status">
-                        <span className="scan-badge">✓ SCANNED</span>
-                        <p className="scan-time">
-                          {new Date(parent1ScannedAt).toLocaleString()}
-                        </p>
-                      </div>
-                    </div>
-                  )}
                 </div>
               </div>
 
               {parent2 && (
                 <div className={`qr-item ${parent2Scanned ? "scanned" : ""}`}>
                   <p className="qr-parent-label">{parent2}</p>
-
                   <div className="qr-wrapper">
                     <QRCode value={qrDataParent2} />
-
-                    {parent2Scanned && (
-                      <div className="qr-overlay">
-                        <div className="qr-status">
-                          <span className="scan-badge">✓ SCANNED</span>
-                          <p className="scan-time">
-                            {new Date(parent2ScannedAt).toLocaleString()}
-                          </p>
-                        </div>
-                      </div>
-                    )}
                   </div>
                 </div>
               )}
             </div>
 
-            <p className="qr-text">
-              Show this QR code during graduation. It can only be used once.
-            </p>
-
-            {!emailSent ? (
-              <button
-                className="send-email-btn"
-                onClick={handleSendEmail}
-                disabled={loading}
-              >
-                {loading ? "Sending..." : "Send QR Codes to Email"}
-              </button>
-            ) : (
-              <p className="email-sent-message">QR codes sent to {email}</p>
-            )}
-
-            <button
-              className="back-btn"
-              onClick={() => {
-                setSubmitted(false);
-                setEmailSent(false);
-              }}
-            >
-              Back
+            <button className="send-email-btn" onClick={handleSendEmail} disabled={loading}>
+              {loading ? "Sending..." : "Send QR Codes to Email"}
             </button>
           </div>
         )}
