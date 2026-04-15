@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useSearchParams } from "react-router-dom";
 import QRCode from "react-qr-code";
 import "./App.css";
 import QRCodeLib from "qrcode";
@@ -19,10 +20,16 @@ export default function App() {
   const [parent2Scanned, setParent2Scanned] = useState(false);
   const [parent1ScannedAt, setParent1ScannedAt] = useState(null);
   const [parent2ScannedAt, setParent2ScannedAt] = useState(null);
+  const [showScanPage, setShowScanPage] = useState(false);
+  const [scanParentName, setScanParentName] = useState(null);
+  const [scanMessage, setScanMessage] = useState("Checking QR code...");
 
   // Generate QR code data early so it's available for saveToSupabase
-  const qrDataParent1 = `${parent1} approved`;
-  const qrDataParent2 = parent2 ? `${parent2} approved` : null;
+  const qrDataParent1 = `${window.location.origin}/scan?parent=${encodeURIComponent(parent1)}`;
+
+  const qrDataParent2 = parent2
+    ? `${window.location.origin}/scan?parent=${encodeURIComponent(parent2)}`
+    : null;
 
   // Check QR scan status when component submitted
   useEffect(() => {
@@ -117,7 +124,6 @@ export default function App() {
         return;
       }
 
-      
       setStudentNumberError("");
       saveToSupabase();
       setSubmitted(true);
@@ -234,18 +240,76 @@ export default function App() {
     }
   };
 
+  // Scan page component as inner component
+  const ScanPage = () => {
+    const [searchParams] = useSearchParams();
+    const parentName = searchParams.get("parent");
+
+    useEffect(() => {
+      const scanQr = async () => {
+        const response = await fetch("http://localhost:5000/api/scan-qr", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({ parentName })
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+          setScanMessage("QR code accepted");
+        } else if (data.inactive) {
+          setScanMessage(`QR code already used at ${data.scannedAt}`);
+        } else {
+          setScanMessage(data.error || "Failed to scan QR code");
+        }
+      };
+
+      if (parentName) {
+        scanQr();
+      }
+    }, [parentName]);
+
+    return (
+      <div className="scan-page-container">
+        <div className="scan-card">
+          <h1>{scanMessage}</h1>
+          <button onClick={() => setShowScanPage(false)} className="back-btn">
+            Back to Registration
+          </button>
+        </div>
+      </div>
+    );
+  };
+
+  // Check if we're in scan mode based on URL
+  useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    const parentParam = urlParams.get("parent");
+    if (parentParam) {
+      setShowScanPage(true);
+      setScanParentName(parentParam);
+    }
+  }, []);
+
+  // Main render
+  if (showScanPage) {
+    return <ScanPage />;
+  }
+
   return (
     <div className="app-container">
       <div className="form-card">
         <h1 className="form-title">
-         LCC Graduation Reservation
+          LCC Graduation Reservation
         </h1>
-        <p1 className="form-description">
+        <p className="form-description">
           Fill out the form below to reserve your spot for the LCC graduation ceremony. 
           You can reserve up to 2 spots only. After submitting, a QR code will be generated for each reserved spot. 
           Show the QR code(s) during graduation to gain entry. 
           The QR code(s) will also be sent to your email for safekeeping.
-        </p1>
+        </p>
         {!submitted ? (
           <form onSubmit={handleSubmit} className="form">
             <label className="form-label">Student Name <span className="required-asterisk">*</span></label>
@@ -318,7 +382,7 @@ export default function App() {
               className="form-input"
             />
 
-            <label className="form-label">Parent 2 Name(Optional)</label>
+            <label className="form-label">Parent 2 Name (Optional)</label>
             <input
               type="text"
               placeholder="Parent 2 Name"
