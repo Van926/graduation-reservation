@@ -45,13 +45,21 @@ app.post("/api/send-qr-email", async (req, res) => {
   try {
     const { studentName, email, parent1, parent2, qrDataParent1, qrDataParent2 } = req.body;
 
+    console.log("=== send-qr-email endpoint ===");
+    console.log("Received request body:", { studentName, email, parent1, parent2, qrDataParent1, qrDataParent2 });
+
     if (!email || !studentName || !qrDataParent1) {
+      console.error("Missing required fields");
       return res.status(400).json({ error: "Missing required fields" });
     }
 
+    console.log("Generating QR codes...");
     // Generate QR code data URLs
     const qr1DataUrl = await generateQRCodeDataUrl(qrDataParent1);
+    console.log("QR1 generated successfully");
+    
     const qr2DataUrl = qrDataParent2 ? await generateQRCodeDataUrl(qrDataParent2) : null;
+    console.log("QR2 generated successfully");
 
     // Prepare attachments
     const attachments = [
@@ -70,6 +78,8 @@ app.post("/api/send-qr-email", async (req, res) => {
       });
     }
 
+    console.log("Attachments prepared:", attachments.length, "files");
+
     // Create email content
     const emailSubject = "Your Graduation Reservation QR Codes";
     const emailHtml = `
@@ -83,6 +93,7 @@ app.post("/api/send-qr-email", async (req, res) => {
     `;
 
     // Send email
+    console.log("Attempting to send email to:", email);
     await transporter.sendMail({
       from: process.env.EMAIL_USER,
       to: email,
@@ -91,12 +102,16 @@ app.post("/api/send-qr-email", async (req, res) => {
       attachments: attachments,
     });
 
+    console.log("Email sent successfully");
     res.json({
       success: true,
       message: "QR codes sent to email successfully",
     });
   } catch (error) {
-    console.error("Error sending email:", error);
+    console.error("=== ERROR in send-qr-email ===");
+    console.error("Error message:", error.message);
+    console.error("Full error:", error);
+    console.error("Stack trace:", error.stack);
     res.status(500).json({ error: "Failed to send email", details: error.message });
   }
 });
