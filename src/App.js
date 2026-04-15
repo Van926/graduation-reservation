@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import QRCode from "react-qr-code";
 import "./App.css";
 import QRCodeLib from "qrcode";
@@ -15,10 +15,66 @@ export default function App() {
   const [loading, setLoading] = useState(false);
   const [emailSent, setEmailSent] = useState(false);
   const [studentNumberError, setStudentNumberError] = useState("");
+  const [parent1Scanned, setParent1Scanned] = useState(false);
+  const [parent2Scanned, setParent2Scanned] = useState(false);
+  const [parent1ScannedAt, setParent1ScannedAt] = useState(null);
+  const [parent2ScannedAt, setParent2ScannedAt] = useState(null);
 
   // Generate QR code data early so it's available for saveToSupabase
   const qrDataParent1 = `${parent1} approved`;
   const qrDataParent2 = parent2 ? `${parent2} approved` : null;
+
+  // Check QR scan status when component submitted
+  useEffect(() => {
+    if (submitted) {
+      checkQRScans();
+      // Auto-check every 5 seconds for updates
+      const scanCheckInterval = setInterval(checkQRScans, 5000);
+      return () => clearInterval(scanCheckInterval);
+    }
+  }, [submitted, parent1, parent2]);
+
+  const checkQRScans = async () => {
+    try {
+      // Check parent1 scan status
+      const response1 = await fetch("http://localhost:5000/api/check-qr-status", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          parentName: parent1,
+        }),
+      });
+
+      if (response1.ok) {
+        const data1 = await response1.json();
+        setParent1Scanned(data1.scanned);
+        setParent1ScannedAt(data1.scannedAt);
+      }
+
+      // Check parent2 scan status if exists
+      if (parent2) {
+        const response2 = await fetch("http://localhost:5000/api/check-qr-status", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            parentName: parent2,
+          }),
+        });
+
+        if (response2.ok) {
+          const data2 = await response2.json();
+          setParent2Scanned(data2.scanned);
+          setParent2ScannedAt(data2.scannedAt);
+        }
+      }
+    } catch (error) {
+      console.error("Error checking QR scans:", error);
+    }
+  };
 
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -284,14 +340,38 @@ export default function App() {
           <div className="qr-section">
             <p className="qr-title">Reservation QR Code{parent2 ? "s" : ""}</p>
             <div className="qr-container">
-              <div className="qr-item">
+              <div className={`qr-item ${parent1Scanned ? "scanned" : ""}`}>
                 {parent2 && <p className="qr-parent-label">{parent1}</p>}
-                <QRCode value={qrDataParent1} />
+                <div className="qr-wrapper">
+                  <QRCode value={qrDataParent1} />
+                  {parent1Scanned && (
+                    <div className="qr-overlay">
+                      <div className="qr-status">
+                        <span className="scan-badge">✓ SCANNED</span>
+                        <p className="scan-time">
+                          {parent1ScannedAt ? new Date(parent1ScannedAt).toLocaleString() : ""}
+                        </p>
+                      </div>
+                    </div>
+                  )}
+                </div>
               </div>
               {parent2 && (
-                <div className="qr-item">
+                <div className={`qr-item ${parent2Scanned ? "scanned" : ""}`}>
                   <p className="qr-parent-label">{parent2}</p>
-                  <QRCode value={qrDataParent2} />
+                  <div className="qr-wrapper">
+                    <QRCode value={qrDataParent2} />
+                    {parent2Scanned && (
+                      <div className="qr-overlay">
+                        <div className="qr-status">
+                          <span className="scan-badge">✓ SCANNED</span>
+                          <p className="scan-time">
+                            {parent2ScannedAt ? new Date(parent2ScannedAt).toLocaleString() : ""}
+                          </p>
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 </div>
               )}
             </div>
