@@ -238,6 +238,95 @@ app.post("/api/save-registration", async (req, res) => {
   }
 });
 
+// Scan QR code endpoint - records when a QR code is scanned
+app.post("/api/scan-qr", async (req, res) => {
+  try {
+    const { qrData, parentName } = req.body;
+
+    if (!qrData || !parentName) {
+      return res.status(400).json({ error: "QR data and parent name are required" });
+    }
+
+    const scanTimestamp = new Date().toISOString();
+
+    // Find the registration record with this parent name
+    const { data: registrations, error: fetchError } = await supabase
+      .from("registrations")
+      .select("id, parent1, parent2")
+      .or(`parent1.eq.${parentName},parent2.eq.${parentName}`);
+
+    if (fetchError) {
+      console.error("Error fetching registration:", fetchError);
+      return res.status(500).json({ error: "Failed to find registration", details: fetchError.message });
+    }
+
+    if (!registrations || registrations.length === 0) {
+      return res.status(404).json({ error: "Registration not found" });
+    }
+
+    const registration = registrations[0];
+    const isParent1 = registration.parent1 === parentName;
+
+    // Update the scanned_at timestamp for the appropriate parent
+    const updateField = isParent1 ? "scanned_at_parent1" : "scanned_at_parent2";
+    const { error: updateError } = await supabase
+      .from("registrations")
+      .update({ [updateField]: scanTimestamp })
+      .eq("id", registration.id);
+
+    if (updateError) {
+      console.error("Error recording scan:", updateError);
+      return res.status(500).json({ error: "Failed to record scan", details: updateError.message });
+    }
+
+    console.log(`QR code scanned for ${parentName} at ${scanTimestamp}`);
+    res.json({ success: true, scannedAt: scanTimestamp });
+  } catch (error) {
+    console.error("Error in scan-qr endpoint:", error);
+    res.status(500).json({ error: "Failed to scan QR code", details: error.message });
+  }
+});
+
+// Check QR scan status endpoint
+app.post("/api/check-qr-status", async (req, res) => {
+  try {
+    const { parentName } = req.body;
+
+    if (!parentName) {
+      return res.status(400).json({ error: "Parent name is required" });
+    }
+
+    // Find the registration record with this parent name
+    const { data: registrations, error: fetchError } = await supabase
+      .from("registrations")
+      .select("id, parent1, parent2, scanned_at_parent1, scanned_at_parent2")
+      .or(`parent1.eq.${parentName},parent2.eq.${parentName}`);
+
+    if (fetchError) {
+      console.error("Error fetching registration:", fetchError);
+      return res.status(500).json({ error: "Failed to find registration", details: fetchError.message });
+    }
+
+    if (!registrations || registrations.length === 0) {
+      return res.json({ scanned: false, scannedAt: null });
+    }
+
+    const registration = registrations[0];
+    const isParent1 = registration.parent1 === parentName;
+    const scanField = isParent1 ? registration.scanned_at_parent1 : registration.scanned_at_parent2;
+    const isScanned = scanField !== null;
+
+    res.json({ 
+      success: true,
+      scanned: isScanned, 
+      scannedAt: isScanned ? scanField : null 
+    });
+  } catch (error) {
+    console.error("Error in check-qr-status endpoint:", error);
+    res.status(500).json({ error: "Failed to check QR status", details: error.message });
+  }
+});
+
 // Test endpoint to check Supabase table structure
 app.get("/api/test-supabase", async (req, res) => {
   try {
@@ -275,87 +364,6 @@ app.get("/api/test-supabase", async (req, res) => {
     });
   }
 });
-
-// Scan QR code endpoint - records when a QR code is scanned only once
-app.post("/api/scan-qr", async (req, res) => {
-  try {
-    const { parentName } = req.body;
-
-    if (!parentName) {
-      return res.status(400).json({ error: "Parent name is required" });
-    }
-
-    const scanTimestamp = new Date().toISOString();
-
-    // Find registration
-    const { data: registrations, error: fetchError } = await supabase
-      .from("registrations")
-      .select(`
-        id,
-        parent1,
-        parent2,
-        scanned_at_parent1,
-        scanned_at_parent2
-      `)
-      .or(`parent1.eq.${parentName},parent2.eq.${parentName}`);
-
-    if (fetchError) {
-      return res.status(500).json({
-        error: "Failed to find registration",
-        details: fetchError.message
-      });
-    }
-
-    if (!registrations || registrations.length === 0) {
-      return res.status(404).json({ error: "Registration not found" });
-    }
-
-    const registration = registrations[0];
-    const isParent1 = registration.parent1 === parentName;
-
-    const scanField = isParent1
-      ? "scanned_at_parent1"
-      : "scanned_at_parent2";
-
-    // If already scanned, make QR inactive
-    if (registration[scanField]) {
-      return res.status(400).json({
-        success: false,
-        inactive: true,
-        message: "QR code already used",
-        scannedAt: registration[scanField]
-      });
-    }
-
-    // Mark QR as scanned / inactive
-    const { error: updateError } = await supabase
-      .from("registrations")
-      .update({
-        [scanField]: scanTimestamp
-      })
-      .eq("id", registration.id);
-
-    if (updateError) {
-      return res.status(500).json({
-        error: "Failed to record scan",
-        details: updateError.message
-      });
-    }
-
-    res.json({
-      success: true,
-      inactive: false,
-      message: "QR code accepted",
-      scannedAt: scanTimestamp
-    });
-  } catch (error) {
-    res.status(500).json({
-      error: "Failed to scan QR code",
-      details: error.message
-    });
-  }
-});
-
 
 // Health check endpoint
 app.get("/api/health", (req, res) => {
