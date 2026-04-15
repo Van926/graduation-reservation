@@ -3,7 +3,7 @@ import QRCode from "react-qr-code";
 import "./App.css";
 import QRCodeLib from "qrcode";
 import { useSearchParams } from "react-router-dom";
-import ReactDOM from "react-dom/client";
+
 
 export default function App() {
   const [studentName, setStudentName] = useState("");
@@ -23,7 +23,7 @@ export default function App() {
   const [parent2ScannedAt, setParent2ScannedAt] = useState(null);
   const [searchParams] = useSearchParams();
   const parentName = searchParams.get("parent");
-  const [message, setMessage] = useState("Checking QR code...");
+  
 
 
   
@@ -35,14 +35,7 @@ const qrDataParent2 = parent2
 
 
   // Check QR scan status when component submitted
-  useEffect(() => {
-    if (submitted) {
-      checkQRScans();
-      // Auto-check every 5 seconds for updates
-      const scanCheckInterval = setInterval(checkQRScans, 5000);
-      return () => clearInterval(scanCheckInterval);
-    }
-  }, [submitted, parent1, parent2]);
+
 
   const checkQRScans = async () => {
     try {
