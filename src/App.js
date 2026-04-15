@@ -3,6 +3,7 @@ import QRCode from "react-qr-code";
 import "./App.css";
 import QRCodeLib from "qrcode";
 import { useSearchParams } from "react-router-dom";
+import ReactDOM from "react-dom/client";
 
 export default function App() {
   const [studentName, setStudentName] = useState("");
