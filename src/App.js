@@ -67,49 +67,50 @@ export default function App() {
   }, [parentName]);
 
   // If user is opening the page from a QR code, show scan result page only
-  if (parentName) {
-    return (
-      <div className="app-container">
-        <div className="form-card">
-          <h1 className="form-title">LCC Graduation QR Scanner</h1>
+  useEffect(() => {
+  if (submitted) {
+    checkQRScans();
 
-          <div style={{ textAlign: "center", padding: "30px 0" }}>
-            <p
-              style={{
-                fontSize: "24px",
-                fontWeight: "bold",
-                color: message.includes("accepted")
-                  ? "green"
-                  : message.includes("already used")
-                  ? "red"
-                  : "#333",
-              }}
-            >
-              {message}
+    const interval = setInterval(() => {
+      checkQRScans();
+    }, 5000);
+
+    return () => clearInterval(interval);
+  }
+}, [submitted, parent1, parent2]);
+
+// ✅ AFTER all hooks
+if (parentName) {
+  return (
+    <div className="app-container">
+      <div className="form-card">
+        <h1 className="form-title">LCC Graduation QR Scanner</h1>
+
+        <div style={{ textAlign: "center", padding: "30px 0" }}>
+          <p
+            style={{
+              fontSize: "24px",
+              fontWeight: "bold",
+              color: message.includes("accepted")
+                ? "green"
+                : message.includes("already used")
+                ? "red"
+                : "#333",
+            }}
+          >
+            {message}
+          </p>
+
+          {message.includes("accepted") && (
+            <p style={{ marginTop: "12px", fontSize: "18px" }}>
+              Entry approved for {parentName}
             </p>
-
-            {message.includes("accepted") && (
-              <p style={{ marginTop: "12px", fontSize: "18px" }}>
-                Entry approved for {parentName}
-              </p>
-            )}
-          </div>
+          )}
         </div>
       </div>
-    );
-  }
-
-  useEffect(() => {
-    if (submitted) {
-      checkQRScans();
-
-      const interval = setInterval(() => {
-        checkQRScans();
-      }, 5000);
-
-      return () => clearInterval(interval);
-    }
-  }, [submitted, parent1, parent2]);
+    </div>
+  );
+}
 
   const checkQRScans = async () => {
     try {
