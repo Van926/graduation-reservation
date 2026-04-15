@@ -134,9 +134,7 @@ export default function App() {
       console.log("QR Data Parent2:", qrDataParent2);
 
       // Generate QR code data URLs
-      console.log("Generating QR code for Parent1...");
       const qr1DataUrl = await QRCodeLib.toDataURL(qrDataParent1);
-      console.log("QR1 generated, length:", qr1DataUrl.length);
 
       let qr2DataUrl = null;
       if (qrDataParent2) {
