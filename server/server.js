@@ -2,7 +2,7 @@ const express = require("express");
 const cors = require("cors");
 const nodemailer = require("nodemailer");
 const QRCode = require("qrcode");
-const { createClient } = require("@supabase/supabase-js");
+const { createClient } = require("../../../../../../backend/server/node_modules/@supabase/supabase-js/src/lib/rest/types/common/common");
 require("dotenv").config();
 
 const app = express();
