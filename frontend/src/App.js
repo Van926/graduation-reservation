@@ -5,7 +5,7 @@ import "./App.css";
 import QRCodeLib from "qrcode";
 
 // API Configuration
-const API_BASE_URL = process.env.REACT_APP_API_URL || 'https://grad-reservation-backend.vercel.app/';
+const API_BASE_URL = process.env.REACT_APP_API_URL || 'https://grad-reservation-backend.vercel.app';
 
 export default function App() {
   const [studentName, setStudentName] = useState("");
@@ -37,7 +37,7 @@ export default function App() {
     const testBackendConnection = async () => {
       try {
         console.log('Testing backend connection...');
-        const response = await fetch(`${API_BASE_URL}api/health`, {
+        const response = await fetch(`${API_BASE_URL}/api/health`, {
           method: 'GET',
           headers: {
             'Content-Type': 'application/json',
