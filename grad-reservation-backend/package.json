@@ -10,7 +10,8 @@
     "@supabase/supabase-js": "^2.103.3",
     "cors": "^2.8.6",
     "express": "^4.22.1",
-    "nodemailer": "^6.10.1"
+    "nodemailer": "^6.10.1",
+    "serverless-http": "^4.0.0"
   },
   "keywords": [],
   "author": "",
