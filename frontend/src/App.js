@@ -4,70 +4,75 @@ import QRCodeLib from "qrcode";
 import "./App.css";
 import "./RegistrationsPage.css";
 
-const API_BASE_URL = process.env.REACT_APP_API_URL || "https://grad-reservation-backend.vercel.app";
+const API_BASE_URL =
+  process.env.REACT_APP_API_URL || "https://grad-reservation-backend.vercel.app";
 
-const fmt = (iso) =>
-  iso ? new Date(iso).toLocaleString("en-PH", { timeZone: "Asia/Manila" }) : "—";
+const ADMIN_PASSWORD = process.env.REACT_APP_ADMIN_PASSWORD || "admin123";
 
-// ─── Scan Page ────────────────────────────────────────────────────────────────
+const fmt = (iso) => {
+  if (!iso) return "—";
+  try { return new Date(iso).toLocaleString("en-PH", { timeZone: "Asia/Manila" }); }
+  catch { return String(iso); }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ScanPage — shown when URL has ?parent=...
+// ─────────────────────────────────────────────────────────────────────────────
 function ScanPage({ parentName }) {
   const [status, setStatus]       = useState("loading");
-  const [message, setMessage]     = useState("");
+  const [message, setMessage]     = useState("Validating your QR code…");
   const [scannedAt, setScannedAt] = useState(null);
 
   useEffect(() => {
-    const scanQr = async () => {
-      try {
-        const response = await fetch(`${API_BASE_URL}/api/scan-qr`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ parentName }),
-        });
-        const data = await response.json();
-        if (!response.ok)  { setStatus("error");    setMessage(data.error || "Failed to validate QR code."); return; }
-        if (data.inactive) { setStatus("inactive"); setScannedAt(data.scannedAt); setMessage("This QR code has already been used."); return; }
-        if (data.success)  { setStatus("success");  setMessage("Entry approved. Welcome to the LCC Graduation Ceremony!"); return; }
-        setStatus("error"); setMessage(data.error || "Unexpected response from server.");
-      } catch {
-        setStatus("error");
-        setMessage("Connection error. Please show this QR code to the registration desk.");
-      }
-    };
-    scanQr();
+    if (!parentName) { setStatus("error"); setMessage("No parent information found in this QR code."); return; }
+    fetch(`${API_BASE_URL}/api/scan-qr`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ parentName }),
+    })
+      .then((r) => r.json().then((d) => ({ ok: r.ok, d })))
+      .then(({ ok, d }) => {
+        if (!ok)       { setStatus("error");    setMessage(d.error || "Failed to validate QR code."); }
+        else if (d.inactive) { setStatus("inactive"); setScannedAt(d.scannedAt); setMessage("This QR code has already been used."); }
+        else if (d.success)  { setStatus("success");  setMessage("Entry approved. Welcome to the LCC Graduation Ceremony!"); }
+        else                 { setStatus("error");    setMessage(d.error || "Unexpected response."); }
+      })
+      .catch(() => { setStatus("error"); setMessage("Connection error. Please show this QR code to the registration desk."); });
   }, [parentName]);
 
-  const config = {
-    loading:  { icon: "○", color: "#888899", label: "Checking…" },
-    success:  { icon: "✓", color: "#22c55e", label: "Entry Approved" },
-    inactive: { icon: "⚠", color: "#f59e0b", label: "Already Used" },
-    error:    { icon: "✕", color: "#ef4444", label: "Invalid QR Code" },
-  }[status];
+  const CONFIGS = {
+    loading:  { icon: "○", color: "#888899", label: "Checking…"       },
+    success:  { icon: "✓", color: "#22c55e", label: "Entry Approved"   },
+    inactive: { icon: "⚠", color: "#f59e0b", label: "Already Used"     },
+    error:    { icon: "✕", color: "#ef4444", label: "Invalid QR Code"  },
+  };
+  const cfg = CONFIGS[status] || CONFIGS.error;
 
   return (
     <div style={{ minHeight: "100dvh", display: "flex", alignItems: "center", justifyContent: "center", background: "#0f0f13", padding: "24px", fontFamily: "Arial, sans-serif" }}>
       <div style={{ background: "#1a1a22", border: "1px solid #2a2a35", borderRadius: "20px", padding: "48px 36px", maxWidth: "380px", width: "100%", textAlign: "center" }}>
-        <div style={{ width: 88, height: 88, borderRadius: "50%", background: `${config.color}18`, border: `2px solid ${config.color}40`, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 28px", fontSize: 36, color: config.color }}>
-          {config.icon}
+        <div style={{ width: 88, height: 88, borderRadius: "50%", background: cfg.color + "18", border: "2px solid " + cfg.color + "40", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 28px", fontSize: 36, color: cfg.color }}>
+          {cfg.icon}
         </div>
         <p style={{ fontSize: 11, fontWeight: 600, letterSpacing: "0.15em", textTransform: "uppercase", color: "#555566", marginBottom: 12 }}>
           LCC Graduation Ceremony
         </p>
         <h1 style={{ fontSize: 28, color: "#f0f0f8", marginBottom: 14, lineHeight: 1.2 }}>
-          {config.label}
+          {cfg.label}
         </h1>
-        <p style={{ fontSize: 15, color: "#888899", lineHeight: 1.6, marginBottom: status === "loading" ? 0 : 32 }}>
-          {status === "loading" ? "Validating your QR code…" : message}
+        <p style={{ fontSize: 15, color: "#888899", lineHeight: 1.6, marginBottom: 32 }}>
+          {message}
         </p>
         {(status === "success" || status === "inactive") && (
           <div style={{ background: "#12121a", border: "1px solid #22222e", borderRadius: 12, padding: 20, textAlign: "left" }}>
             <div style={{ display: "flex", justifyContent: "space-between", padding: "8px 0" }}>
               <span style={{ fontSize: 12, fontWeight: 600, textTransform: "uppercase", color: "#44445a" }}>Guest</span>
-              <span style={{ fontSize: 14, fontWeight: 500, color: "#c8c8de" }}>{parentName}</span>
+              <span style={{ fontSize: 14, color: "#c8c8de" }}>{parentName}</span>
             </div>
             {status === "inactive" && scannedAt && (
               <div style={{ display: "flex", justifyContent: "space-between", padding: "8px 0", borderTop: "1px solid #1e1e28" }}>
                 <span style={{ fontSize: 12, fontWeight: 600, textTransform: "uppercase", color: "#44445a" }}>First scanned</span>
-                <span style={{ fontSize: 14, fontWeight: 500, color: "#c8c8de" }}>{fmt(scannedAt)}</span>
+                <span style={{ fontSize: 14, color: "#c8c8de" }}>{fmt(scannedAt)}</span>
               </div>
             )}
           </div>
@@ -80,7 +85,112 @@ function ScanPage({ parentName }) {
   );
 }
 
-// ─── Registrations Page ───────────────────────────────────────────────────────
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PasswordGate — shown before RegistrationsPage to protect admin access
+// ─────────────────────────────────────────────────────────────────────────────
+function PasswordGate({ onSuccess, onCancel }) {
+  const [input, setInput]       = useState("");
+  const [show, setShow]         = useState(false);
+  const [error, setError]       = useState("");
+  const [shaking, setShaking]   = useState(false);
+
+  const attempt = (e) => {
+    e.preventDefault();
+    if (input === ADMIN_PASSWORD) {
+      onSuccess();
+    } else {
+      setError("Incorrect password. Please try again.");
+      setShaking(true);
+      setInput("");
+      setTimeout(() => setShaking(false), 600);
+    }
+  };
+
+  return (
+    <div style={{ minHeight: "100dvh", display: "flex", alignItems: "center", justifyContent: "center", background: "#0f0f13", padding: "24px", fontFamily: "Arial, sans-serif" }}>
+      <style>{`
+        @keyframes shake {
+          0%,100% { transform: translateX(0); }
+          20%,60%  { transform: translateX(-8px); }
+          40%,80%  { transform: translateX(8px); }
+        }
+        .gate-shake { animation: shake 0.5s ease; }
+        .gate-input:focus { outline: none; border-color: #6366f1; box-shadow: 0 0 0 3px rgba(99,102,241,0.15); }
+        .gate-btn:hover:not(:disabled) { background: #4f46e5; }
+        .gate-cancel:hover { color: #888899; }
+      `}</style>
+
+      <div className={shaking ? "gate-shake" : ""} style={{ background: "#1a1a22", border: "1px solid #2a2a35", borderRadius: 20, padding: "48px 36px", maxWidth: 380, width: "100%", textAlign: "center" }}>
+
+        {/* Lock icon */}
+        <div style={{ width: 72, height: 72, borderRadius: "50%", background: "rgba(99,102,241,0.1)", border: "2px solid rgba(99,102,241,0.3)", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 24px", fontSize: 28 }}>
+          🔒
+        </div>
+
+        <p style={{ fontSize: 11, fontWeight: 600, letterSpacing: "0.15em", textTransform: "uppercase", color: "#555566", marginBottom: 10 }}>
+          Admin Access
+        </p>
+        <h2 style={{ fontSize: 24, color: "#f0f0f8", marginBottom: 8, fontWeight: 700 }}>
+          View Registrations
+        </h2>
+        <p style={{ fontSize: 14, color: "#666677", marginBottom: 28 }}>
+          Enter the admin password to continue.
+        </p>
+
+        <form onSubmit={attempt}>
+          {/* Password input with show/hide toggle */}
+          <div style={{ position: "relative", marginBottom: 12 }}>
+            <input
+              className="gate-input"
+              type={show ? "text" : "password"}
+              placeholder="Enter password"
+              value={input}
+              onChange={(e) => { setInput(e.target.value); setError(""); }}
+              autoFocus
+              style={{ width: "100%", boxSizing: "border-box", background: "#12121a", border: "1px solid #2a2a35", borderRadius: 10, padding: "12px 44px 12px 14px", color: "#e0e0f0", fontSize: 15 }}
+            />
+            <button
+              type="button"
+              onClick={() => setShow((s) => !s)}
+              style={{ position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", cursor: "pointer", color: "#555566", fontSize: 16, padding: 0, lineHeight: 1 }}
+              tabIndex={-1}
+            >
+              {show ? "🙈" : "👁"}
+            </button>
+          </div>
+
+          {error && (
+            <p style={{ fontSize: 13, color: "#ef4444", marginBottom: 12, textAlign: "left" }}>
+              {error}
+            </p>
+          )}
+
+          <button
+            className="gate-btn"
+            type="submit"
+            disabled={!input}
+            style={{ width: "100%", background: "#6366f1", color: "#fff", border: "none", borderRadius: 10, padding: "12px 0", fontSize: 15, fontWeight: 600, cursor: input ? "pointer" : "not-allowed", opacity: input ? 1 : 0.5, transition: "background 0.15s" }}
+          >
+            Unlock
+          </button>
+        </form>
+
+        <button
+          className="gate-cancel"
+          onClick={onCancel}
+          style={{ marginTop: 16, background: "none", border: "none", color: "#44445a", fontSize: 13, cursor: "pointer", transition: "color 0.15s" }}
+        >
+          Cancel
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// RegistrationsPage — shown when "View Registrations" is clicked
+// ─────────────────────────────────────────────────────────────────────────────
 function RegistrationsPage({ onBack }) {
   const [filter, setFilter]           = useState("all");
   const [rows, setRows]               = useState([]);
@@ -92,27 +202,25 @@ function RegistrationsPage({ onBack }) {
 
   useEffect(() => {
     if (window.XLSX) return;
-    const script = document.createElement("script");
-    script.src = "https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js";
-    script.async = true;
-    document.head.appendChild(script);
+    const s = document.createElement("script");
+    s.src = "https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js";
+    s.async = true;
+    document.head.appendChild(s);
   }, []);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const [allRes, scannedRes, unscannedRes] = await Promise.all([
+      const [r1, r2, r3] = await Promise.all([
         fetch(`${API_BASE_URL}/api/registrations?filter=all`),
         fetch(`${API_BASE_URL}/api/registrations?filter=scanned`),
         fetch(`${API_BASE_URL}/api/registrations?filter=unscanned`),
       ]);
-      if (!allRes.ok) throw new Error("Failed to fetch registrations.");
-      const [allData, scannedData, unscannedData] = await Promise.all([
-        allRes.json(), scannedRes.json(), unscannedRes.json(),
-      ]);
-      setRows(allData.data || []);
-      setCounts({ all: allData.total || 0, scanned: scannedData.total || 0, unscanned: unscannedData.total || 0 });
+      if (!r1.ok) throw new Error("Failed to fetch registrations.");
+      const [d1, d2, d3] = await Promise.all([r1.json(), r2.json(), r3.json()]);
+      setRows(d1.data || []);
+      setCounts({ all: d1.total || 0, scanned: d2.total || 0, unscanned: d3.total || 0 });
       setLastRefresh(new Date());
     } catch (err) {
       setError(err.message);
@@ -128,42 +236,39 @@ function RegistrationsPage({ onBack }) {
     .filter((r) => {
       const q = search.toLowerCase().trim();
       if (!q) return true;
-      return (
-        (r.student_name   || "").toLowerCase().includes(q) ||
-        (r.student_number || "").toLowerCase().includes(q) ||
-        (r.parent_name    || "").toLowerCase().includes(q) ||
-        (r.course         || "").toLowerCase().includes(q)
-      );
+      return ["student_name", "student_number", "parent_name", "course"]
+        .some((k) => (r[k] || "").toLowerCase().includes(q));
     });
 
   const exportToExcel = () => {
     const XLSX = window.XLSX;
-    if (!XLSX) { alert("Excel export is still loading, please try again in a moment."); return; }
-    const exportRows = visible.map((r) => ({
-      "Student Name":   r.student_name,
-      "Student Number": r.student_number,
-      "Course":         r.course,
-      "Email":          r.email,
-      "Contact Number": r.contact_number,
-      "Parent Name":    r.parent_name,
-      "Slot":           r.parent_slot,
+    if (!XLSX) { alert("Excel export is still loading, please try again."); return; }
+    const ws = XLSX.utils.json_to_sheet(visible.map((r) => ({
+      "Student Name":   r.student_name   || "",
+      "Student Number": r.student_number || "",
+      "Course":         r.course         || "",
+      "Email":          r.email          || "",
+      "Contact Number": r.contact_number || "",
+      "Parent Name":    r.parent_name    || "",
+      "Slot":           r.parent_slot    || "",
       "Status":         r.scanned ? "Scanned" : "Not Yet Scanned",
       "Scanned At":     r.scanned ? fmt(r.scanned_at) : "",
       "Registered At":  fmt(r.registered_at),
-    }));
-    const ws = XLSX.utils.json_to_sheet(exportRows);
-    ws["!cols"] = [{ wch: 24 }, { wch: 16 }, { wch: 10 }, { wch: 28 }, { wch: 16 }, { wch: 24 }, { wch: 10 }, { wch: 20 }, { wch: 22 }, { wch: 22 }];
+    })));
+    ws["!cols"] = [24,16,10,28,16,24,10,20,22,22].map((wch) => ({ wch }));
     const wb = XLSX.utils.book_new();
-    const sheetName = filter === "scanned" ? "Scanned" : filter === "unscanned" ? "Not Yet Scanned" : "All Registrations";
-    XLSX.utils.book_append_sheet(wb, ws, sheetName);
+    XLSX.utils.book_append_sheet(wb, ws,
+      filter === "scanned" ? "Scanned" : filter === "unscanned" ? "Not Yet Scanned" : "All Registrations"
+    );
     XLSX.writeFile(wb, `lcc-graduation-${filter}-${new Date().toISOString().slice(0, 10)}.xlsx`);
   };
 
-  const tabs = [
+  const TABS = [
     { key: "all",       label: "All",             count: counts.all       },
     { key: "unscanned", label: "Not Yet Scanned",  count: counts.unscanned },
     { key: "scanned",   label: "Already Scanned",  count: counts.scanned   },
   ];
+  const COLS = ["Student Name","Student No.","Course","Parent Name","Slot","Status","Scanned At","Registered At"];
 
   return (
     <div className="reg-page">
@@ -173,8 +278,8 @@ function RegistrationsPage({ onBack }) {
           <button className="reg-back-btn" onClick={onBack}>← Back</button>
         </div>
         <div className="reg-tabs">
-          {tabs.map(({ key, label, count }) => (
-            <button key={key} className={`reg-tab${filter === key ? ` active-${key}` : ""}`} onClick={() => setFilter(key)}>
+          {TABS.map(({ key, label, count }) => (
+            <button key={key} className={`reg-tab${filter === key ? " active-" + key : ""}`} onClick={() => setFilter(key)}>
               {label} ({count})
             </button>
           ))}
@@ -190,9 +295,7 @@ function RegistrationsPage({ onBack }) {
         : (
           <div className="reg-table-wrap">
             <table className="reg-table">
-              <thead>
-                <tr>{["Student Name","Student No.","Course","Parent Name","Slot","Status","Scanned At","Registered At"].map((c) => <th key={c}>{c}</th>)}</tr>
-              </thead>
+              <thead><tr>{COLS.map((c) => <th key={c}>{c}</th>)}</tr></thead>
               <tbody>
                 {visible.map((r) => (
                   <tr key={`${r.student_number}-${r.parent_slot}`}>
@@ -219,7 +322,9 @@ function RegistrationsPage({ onBack }) {
   );
 }
 
-// ─── Main App ─────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// App — main entry, all hooks declared first, conditional renders last
+// ─────────────────────────────────────────────────────────────────────────────
 export default function App() {
   const [studentName, setStudentName]               = useState("");
   const [studentNumber, setStudentNumber]           = useState("");
@@ -237,9 +342,13 @@ export default function App() {
   const [parent1ScannedAt, setParent1ScannedAt]     = useState(null);
   const [parent2ScannedAt, setParent2ScannedAt]     = useState(null);
   const [isApiConnected, setIsApiConnected]         = useState(false);
+  const [showGate, setShowGate]                     = useState(false);
   const [showRegistrations, setShowRegistrations]   = useState(false);
 
-  
+  // ── scanParent derived from URL — stable, not a hook ─────────────────────
+  const scanParent = new URLSearchParams(window.location.search).get("parent");
+
+  // ── ALL hooks before any conditional return ───────────────────────────────
   useEffect(() => {
     fetch(`${API_BASE_URL}/api/health`)
       .then((r) => r.ok ? r.json() : Promise.reject())
@@ -249,33 +358,33 @@ export default function App() {
 
   useEffect(() => {
     if (!submitted) return;
-    const checkScans = async () => {
+    const check = async () => {
       try {
         const r1 = await fetch(`${API_BASE_URL}/api/check-qr-status`, {
           method: "POST", headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ parentName: parent1 }),
         });
-        if (r1.ok) { const d1 = await r1.json(); setParent1Scanned(d1.scanned); setParent1ScannedAt(d1.scannedAt); }
+        if (r1.ok) { const d = await r1.json(); setParent1Scanned(d.scanned); setParent1ScannedAt(d.scannedAt); }
         if (parent2) {
           const r2 = await fetch(`${API_BASE_URL}/api/check-qr-status`, {
             method: "POST", headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ parentName: parent2 }),
           });
-          if (r2.ok) { const d2 = await r2.json(); setParent2Scanned(d2.scanned); setParent2ScannedAt(d2.scannedAt); }
+          if (r2.ok) { const d = await r2.json(); setParent2Scanned(d.scanned); setParent2ScannedAt(d.scannedAt); }
         }
-      } catch (err) { console.error("Error checking QR scans:", err); }
+      } catch (e) { console.error("QR scan check error:", e); }
     };
-    checkScans();
-    const interval = setInterval(checkScans, 5000);
-    return () => clearInterval(interval);
+    check();
+    const id = setInterval(check, 5000);
+    return () => clearInterval(id);
   }, [submitted, parent1, parent2]);
 
-  // ── Conditional renders — after ALL hooks ─────────────────────────────────
-  const urlParams  = new URLSearchParams(window.location.search);
-  const scanParent = urlParams.get("parent");
-  if (scanParent) return <ScanPage parentName={decodeURIComponent(scanParent)} />;
-  if (showRegistrations) return <RegistrationsPage onBack={() => setShowRegistrations(false)} />;
+  // ── Conditional renders — safely after all hooks ──────────────────────────
+  if (scanParent)        return <ScanPage parentName={decodeURIComponent(scanParent)} />;
+  if (showGate)          return <PasswordGate onSuccess={() => { setShowGate(false); setShowRegistrations(true); }} onCancel={() => setShowGate(false)} />;
+  if (showRegistrations) return <RegistrationsPage onBack={() => { setShowRegistrations(false); }} />;
 
+  // ── Derived values ────────────────────────────────────────────────────────
   const qrValueParent1 = `${API_BASE_URL}/scan?parent=${encodeURIComponent(parent1)}`;
   const qrValueParent2 = parent2 ? `${API_BASE_URL}/scan?parent=${encodeURIComponent(parent2)}` : null;
 
@@ -292,13 +401,15 @@ export default function App() {
       const { exists } = await checkRes.json();
       if (exists) { setStudentNumberError("This student number is already registered."); return; }
       setStudentNumberError("");
-      const qr1DataUrl = await QRCodeLib.toDataURL(qrValueParent1);
-      const qr2DataUrl = qrValueParent2 ? await QRCodeLib.toDataURL(qrValueParent2) : null;
+
+      const qr1 = await QRCodeLib.toDataURL(qrValueParent1);
+      const qr2 = qrValueParent2 ? await QRCodeLib.toDataURL(qrValueParent2) : null;
+
       const saveRes = await fetch(`${API_BASE_URL}/api/save-registration`, {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ studentName, studentNumber, course, email, contactNumber, parent1, parent2, qrCodeParent1: qr1DataUrl, qrCodeParent2: qr2DataUrl }),
+        body: JSON.stringify({ studentName, studentNumber, course, email, contactNumber, parent1, parent2, qrCodeParent1: qr1, qrCodeParent2: qr2 }),
       });
-      if (!saveRes.ok) { const err = await saveRes.json(); throw new Error(err.error || "Failed to save registration."); }
+      if (!saveRes.ok) { const e = await saveRes.json(); throw new Error(e.error || "Failed to save."); }
       setSubmitted(true);
     } catch (err) { alert("Registration failed: " + err.message); }
   };
@@ -306,11 +417,11 @@ export default function App() {
   const handleSendEmail = async () => {
     setLoading(true);
     try {
-      const qr1DataUrl = await QRCodeLib.toDataURL(qrValueParent1);
-      const qr2DataUrl = qrValueParent2 ? await QRCodeLib.toDataURL(qrValueParent2) : null;
+      const qr1 = await QRCodeLib.toDataURL(qrValueParent1);
+      const qr2 = qrValueParent2 ? await QRCodeLib.toDataURL(qrValueParent2) : null;
       const res = await fetch(`${API_BASE_URL}/api/send-qr-email`, {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ studentName, email, parent1, parent2, qrDataParent1: qr1DataUrl, qrDataParent2: qr2DataUrl }),
+        body: JSON.stringify({ studentName, email, parent1, parent2, qrDataParent1: qr1, qrDataParent2: qr2 }),
       });
       const data = await res.json();
       if (!res.ok || !data.success) throw new Error(data.error || "Failed to send email.");
@@ -326,10 +437,9 @@ export default function App() {
       <div className="form-card">
 
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12, marginBottom: 4 }}>
-          <h1 className="form-title" style={{ margin: 0 }}>79th Commencement Exercises</h1>
-          <h1 className="form-title" style={{ margin: 0 }}>2025-2026</h1>
-          <button onClick={() => setShowRegistrations(true)} style={{ background: "#6366f1", color: "#fff", border: "none", borderRadius: 8, padding: "8px 16px", cursor: "pointer", fontSize: 13, fontWeight: 600 }}>
-            View Registrations
+          <h1 className="form-title" style={{ margin: 0 }}>LCC Graduation Reservation</h1>
+          <button onClick={() => setShowGate(true)} style={{ background: "#6366f1", color: "#fff", border: "none", borderRadius: 8, padding: "8px 16px", cursor: "pointer", fontSize: 13, fontWeight: 600 }}>
+            🔒 View Registrations
           </button>
         </div>
 
@@ -355,9 +465,9 @@ export default function App() {
               className="form-input" required />
             {studentNumberError && <p className="error-message">{studentNumberError}</p>}
 
-            <label className="form-label">Department <span className="required-asterisk">*</span></label>
+            <label className="form-label">Course <span className="required-asterisk">*</span></label>
             <select value={course} onChange={(e) => setCourse(e.target.value)} className="form-input" required>
-              <option value="">Select a department</option>
+              <option value="">Select a course</option>
               <option value="CELA">CELA</option>
               <option value="CBA">CBA</option>
               <option value="CCJE">CCJE</option>
@@ -384,7 +494,8 @@ export default function App() {
           <div className="qr-section">
             <p className="qr-title">Reservation QR Code{parent2 ? "s" : ""}</p>
             <div className="qr-container">
-              <div className={`qr-item ${parent1Scanned ? "scanned" : ""}`}>
+
+              <div className={`qr-item${parent1Scanned ? " scanned" : ""}`}>
                 {parent2 && <p className="qr-parent-label">{parent1}</p>}
                 <div className="qr-wrapper">
                   <QRCode value={qrValueParent1} size={200} />
@@ -398,8 +509,9 @@ export default function App() {
                   )}
                 </div>
               </div>
-              {parent2 && (
-                <div className={`qr-item ${parent2Scanned ? "scanned" : ""}`}>
+
+              {parent2 && qrValueParent2 && (
+                <div className={`qr-item${parent2Scanned ? " scanned" : ""}`}>
                   <p className="qr-parent-label">{parent2}</p>
                   <div className="qr-wrapper">
                     <QRCode value={qrValueParent2} size={200} />
@@ -429,7 +541,9 @@ export default function App() {
               </button>
             )}
 
-            <button onClick={() => { setSubmitted(false); setEmailSent(false); }} className="back-btn">Back to Form</button>
+            <button onClick={() => { setSubmitted(false); setEmailSent(false); }} className="back-btn">
+              Back to Form
+            </button>
           </div>
         )}
       </div>
