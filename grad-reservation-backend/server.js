@@ -4,7 +4,8 @@ const healthRoutes       = require('./routes/health');
 const registrationRoutes = require('./routes/registration');
 const qrRoutes           = require('./routes/qr');
 const emailRoutes        = require('./routes/email');
-const scanRoutes         = require('./routes/scan');
+const scanRoutes          = require('./routes/scan');
+const registrationsRoutes = require('./routes/registrations');
 
 const app = express();
 
@@ -30,7 +31,8 @@ app.get('/', (_req, res) => {
       'POST /api/save-registration',
       'POST /api/scan-qr',
       'POST /api/check-qr-status',
-      'POST /api/send-qr-email'
+      'POST /api/send-qr-email',
+      'GET  /api/registrations?filter=all|scanned|unscanned'
     ]
   });
 });
@@ -40,7 +42,8 @@ app.use('/api/health', healthRoutes);
 app.use('/api',        registrationRoutes);
 app.use('/api',        qrRoutes);
 app.use('/api',        emailRoutes);
-app.use('/scan',       scanRoutes);          // GET /scan?parent=... — no /api prefix, opened by phone browser
+app.use('/scan',          scanRoutes);
+app.use('/api',          registrationsRoutes);
 
 // ─── 404 fallback ─────────────────────────────────────────────────────────────
 app.use((req, res) => {
