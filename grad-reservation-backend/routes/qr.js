@@ -87,3 +87,54 @@ router.post('/check-qr-status', async (req, res) => {
 });
 
 module.exports = router;
+
+// POST /api/mark-scanned
+// Manually marks a parent's QR as scanned from the admin panel
+// Body: { parentName, studentNumber }
+router.post('/mark-scanned', async (req, res) => {
+  if (!supabase) return res.json({ success: true });
+
+  try {
+    const { parentName, studentNumber } = req.body;
+    if (!parentName)     return res.status(400).json({ error: 'Parent name is required.' });
+    if (!studentNumber)  return res.status(400).json({ error: 'Student number is required.' });
+
+    // Fetch the exact row by student number for precision
+    const { data, error } = await supabase
+      .from('registrations')
+      .select('id, parent1_name, parent2_name, parent1_scanned, parent2_scanned')
+      .eq('student_number', studentNumber)
+      .maybeSingle();
+
+    if (error) throw error;
+    if (!data) return res.status(404).json({ error: 'Registration not found.' });
+
+    const isParent1 = data.parent1_name === parentName;
+    const isParent2 = data.parent2_name === parentName;
+
+    if (!isParent1 && !isParent2) {
+      return res.status(404).json({ error: 'Parent name does not match this registration.' });
+    }
+
+    const alreadyScanned = isParent1 ? data.parent1_scanned : data.parent2_scanned;
+    if (alreadyScanned) {
+      return res.status(409).json({ error: 'This QR code is already marked as scanned.' });
+    }
+
+    const updateData = isParent1
+      ? { parent1_scanned: true, parent1_scanned_at: new Date().toISOString() }
+      : { parent2_scanned: true, parent2_scanned_at: new Date().toISOString() };
+
+    const { error: updateError } = await supabase
+      .from('registrations')
+      .update(updateData)
+      .eq('id', data.id);
+
+    if (updateError) throw updateError;
+
+    res.json({ success: true, scanned_at: updateData.parent1_scanned_at || updateData.parent2_scanned_at });
+  } catch (err) {
+    console.error('mark-scanned error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});

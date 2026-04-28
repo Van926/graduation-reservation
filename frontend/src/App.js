@@ -114,8 +114,8 @@ function LoginPage({ onStudentLogin, onAdminLogin }) {
       });
       const data = await res.json();
       if (!res.ok) { shake("Server error. Please try again."); return; }
-      if (!data.exists) { shake("Student number not found. Please register first or check your number."); return; }
-      onStudentLogin(input);
+      if (!data.exists) { shake("Student number not found. Please check your number."); return; }
+      onStudentLogin({ studentNumber: input, studentName: data.student_name || "", course: data.course || "" });
     } catch {
       shake("Connection error. Please try again.");
     } finally {
@@ -224,6 +224,7 @@ function AdminPage({ onLogout }) {
   const [importError, setImportError]     = useState("");
   const [importing, setImporting]         = useState(false);
   const [importResult, setImportResult]   = useState(null);
+  const [markingId, setMarkingId]         = useState(null); // "studentNumber-parentSlot" being marked
 
   // Load SheetJS
   useEffect(() => {
@@ -252,6 +253,37 @@ function AdminPage({ onLogout }) {
   }, []);
 
   useEffect(() => { fetchData(); }, [fetchData]);
+
+  const handleMarkScanned = async (row) => {
+    const id = `${row.student_number}-${row.parent_slot}`;
+    if (!window.confirm(`Mark "${row.parent_name}" as scanned?\n\nStudent: ${row.student_name} (${row.student_number})\n\nThis action cannot be undone.`)) return;
+
+    setMarkingId(id);
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/mark-scanned`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ parentName: row.parent_name, studentNumber: row.student_number }),
+      });
+      const data = await res.json();
+      if (!res.ok) { alert(data.error || 'Failed to mark as scanned.'); return; }
+
+      // Optimistic update — reflect change immediately without full re-fetch
+      setRows(prev => prev.map(r => {
+        if (r.student_number === row.student_number && r.parent_slot === row.parent_slot) {
+          return { ...r, scanned: true, scanned_at: data.scanned_at };
+        }
+        return r;
+      }));
+      setCounts(prev => ({ ...prev, scanned: prev.scanned + 1, unscanned: prev.unscanned - 1 }));
+    } catch (err) {
+      alert('Error: ' + err.message);
+    } finally {
+      setMarkingId(null);
+    }
+  };
+
+
 
   const visible = rows
     .filter(r => filter === "scanned" ? r.scanned : filter === "unscanned" ? !r.scanned : true)
@@ -347,7 +379,7 @@ function AdminPage({ onLogout }) {
     { key: "unscanned", label: "Not Yet Scanned",  count: counts.unscanned },
     { key: "scanned",   label: "Already Scanned",  count: counts.scanned   },
   ];
-  const COLS = ["Student Name","Student No.","Course","Parent Name","Slot","Status","Scanned At","Registered At"];
+  const COLS = ["Student Name","Student No.","Course","Parent Name","Slot","Status","Scanned At","Registered At","Action"];
 
   return (
     <div className="reg-page">
@@ -400,6 +432,28 @@ function AdminPage({ onLogout }) {
                         <td><span className={r.scanned ? "badge-scanned" : "badge-pending"}>{r.scanned ? "✓ Scanned" : "Pending"}</span></td>
                         <td>{r.scanned ? fmt(r.scanned_at) : "—"}</td>
                         <td>{fmt(r.registered_at)}</td>
+                        <td>
+                          {!r.scanned && (
+                            <button
+                              onClick={() => handleMarkScanned(r)}
+                              disabled={markingId === `${r.student_number}-${r.parent_slot}`}
+                              style={{
+                                background: "rgba(34,197,94,0.12)",
+                                border: "1px solid rgba(34,197,94,0.3)",
+                                color: "#22c55e",
+                                borderRadius: 6,
+                                padding: "4px 12px",
+                                fontSize: 12,
+                                fontWeight: 600,
+                                cursor: markingId === `${r.student_number}-${r.parent_slot}` ? "not-allowed" : "pointer",
+                                opacity: markingId === `${r.student_number}-${r.parent_slot}` ? 0.5 : 1,
+                                whiteSpace: "nowrap",
+                              }}
+                            >
+                              {markingId === `${r.student_number}-${r.parent_slot}` ? "…" : "✓ Mark Scanned"}
+                            </button>
+                          )}
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -517,10 +571,11 @@ function AdminPage({ onLogout }) {
 // ─────────────────────────────────────────────────────────────────────────────
 // StudentPage — registration form + QR display
 // ─────────────────────────────────────────────────────────────────────────────
-function StudentPage({ studentNumber: initialStudentNumber, onLogout }) {
+function StudentPage({ studentInfo, onLogout }) {
+  const initialStudentNumber = studentInfo?.studentNumber || "";
   const [studentName, setStudentName]               = useState("");
   const [studentNumber, setStudentNumber]           = useState(initialStudentNumber);
-  const [course, setCourse]                         = useState("");
+  const [course, setCourse]                         = useState(studentInfo?.course || "");
   const [email, setEmail]                           = useState("");
   const [contactNumber, setContactNumber]           = useState("");
   const [parent1, setParent1]                       = useState("");
@@ -529,6 +584,12 @@ function StudentPage({ studentNumber: initialStudentNumber, onLogout }) {
   const [loading, setLoading]                       = useState(false);
   const [emailSent, setEmailSent]                   = useState(false);
   const [studentNumberError, setStudentNumberError] = useState("");
+  // Pre-fill name from login data if available
+  useEffect(() => {
+    if (studentInfo?.studentName) setStudentName(studentInfo.studentName);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const [studentNumberStatus, setStudentNumberStatus] = useState(initialStudentNumber ? "available" : "idle");
   const [parent1Scanned, setParent1Scanned]         = useState(false);
   const [parent2Scanned, setParent2Scanned]         = useState(false);
@@ -654,31 +715,14 @@ function StudentPage({ studentNumber: initialStudentNumber, onLogout }) {
 
         {!submitted ? (
           <form onSubmit={handleSubmit} className="form">
-            <label className="form-label">Student Name <span className="required-asterisk">*</span></label>
-            <input type="text" placeholder="Enter your full name" value={studentName} onChange={e => setStudentName(e.target.value)} className="form-input" required />
+            <label className="form-label">Student Name</label>
+            <input type="text" value={studentName || "—"} readOnly className="form-input" style={{ background: "#12121a", color: "#555566", cursor: "not-allowed", borderColor: "#1e1e28" }} tabIndex={-1} />
 
-            <label className="form-label">Student Number <span className="required-asterisk">*</span></label>
-            <input type="text" placeholder="Enter your student number" value={studentNumber}
-              onChange={e => { setStudentNumber(e.target.value.replace(/[^0-9-]/g, "")); setStudentNumberError(""); }}
-              className="form-input"
-              style={{ borderColor: studentNumberStatus === "taken" ? "#ef4444" : studentNumberStatus === "available" ? "#22c55e" : studentNumberStatus === "checking" ? "#6366f1" : undefined, transition: "border-color 0.2s" }}
-              required />
-            {studentNumber.length >= 3 && (
-              <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 6, fontSize: 13, minHeight: 20 }}>
-                {studentNumberStatus === "checking"  && <><span style={{ color: "#6366f1" }}>⟳</span><span style={{ color: "#6366f1" }}>Checking availability…</span></>}
-                {studentNumberStatus === "available" && <><span style={{ color: "#22c55e" }}>✓</span><span style={{ color: "#22c55e" }}>Student number is available</span></>}
-                {studentNumberStatus === "taken"     && <><span style={{ color: "#ef4444" }}>✕</span><span style={{ color: "#ef4444" }}>This student number is already registered</span></>}
-              </div>
-            )}
-            {studentNumberError && <p className="error-message">{studentNumberError}</p>}
+            <label className="form-label">Student Number</label>
+            <input type="text" value={studentNumber || "—"} readOnly className="form-input" style={{ background: "#12121a", color: "#555566", cursor: "not-allowed", borderColor: "#1e1e28" }} tabIndex={-1} />
 
-            <label className="form-label">Course <span className="required-asterisk">*</span></label>
-            <select value={course} onChange={e => setCourse(e.target.value)} className="form-input" required>
-              <option value="">Select a course</option>
-              <option value="CELA">CELA</option><option value="CBA">CBA</option>
-              <option value="CCJE">CCJE</option><option value="CON">CON</option>
-              <option value="CITHM">CITHM</option><option value="CCTE">CCTE</option>
-            </select>
+            <label className="form-label">Course</label>
+            <input type="text" value={course || "—"} readOnly className="form-input" style={{ background: "#12121a", color: "#555566", cursor: "not-allowed", borderColor: "#1e1e28" }} tabIndex={-1} />
 
             <label className="form-label">Email <span className="required-asterisk">*</span></label>
             <input type="email" placeholder="your.email@example.com" value={email} onChange={e => setEmail(e.target.value)} className="form-input" required />
@@ -732,7 +776,7 @@ function StudentPage({ studentNumber: initialStudentNumber, onLogout }) {
 // ─────────────────────────────────────────────────────────────────────────────
 export default function App() {
   const [page, setPage]               = useState("login"); // "login" | "student" | "admin"
-  const [studentNumber, setStudentNumber] = useState(null);
+  const [studentInfo, setStudentInfo] = useState(null);
 
   // QR scan — bypass login entirely
   const scanParent = new URLSearchParams(window.location.search).get("parent");
@@ -740,11 +784,11 @@ export default function App() {
 
   if (page === "login") return (
     <LoginPage
-      onStudentLogin={(num) => { setStudentNumber(num); setPage("student"); }}
+      onStudentLogin={(info) => { setStudentInfo(info); setPage("student"); }}
       onAdminLogin={() => setPage("admin")}
     />
   );
   if (page === "admin")   return <AdminPage   onLogout={() => setPage("login")} />;
-  if (page === "student") return <StudentPage studentNumber={studentNumber} onLogout={() => { setStudentNumber(null); setPage("login"); }} />;
+  if (page === "student") return <StudentPage studentInfo={studentInfo} onLogout={() => { setStudentInfo(null); setPage("login"); }} />;
   return null;
 }

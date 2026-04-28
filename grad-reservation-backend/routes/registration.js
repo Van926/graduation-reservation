@@ -3,16 +3,16 @@ const supabase = require('../lib/supabase');
 
 const router = Router();
 
-// Reusable helper — uses maybeSingle() which never throws on 0 rows
-async function studentNumberExists(studentNumber) {
+// Reusable helper — returns the student row or null (never throws on 0 rows)
+async function findStudent(studentNumber) {
   const { data, error } = await supabase
     .from('registrations')
-    .select('student_number')
+    .select('student_number, student_name, course')
     .eq('student_number', studentNumber)
     .maybeSingle();               // returns null (not an error) when no row found
 
   if (error) throw error;
-  return !!data;
+  return data || null;            // null = not found
 }
 
 // POST /api/check-student-number
@@ -23,8 +23,12 @@ router.post('/check-student-number', async (req, res) => {
     const { studentNumber } = req.body;
     if (!studentNumber) return res.status(400).json({ error: 'Student number is required.' });
 
-    const exists = await studentNumberExists(studentNumber);
-    res.json({ exists });
+    const student = await findStudent(studentNumber);
+    res.json({
+      exists:       !!student,
+      student_name: student?.student_name || null,
+      course:       student?.course       || null,
+    });
   } catch (err) {
     console.error('check-student-number error:', err.message);
     res.status(500).json({ error: err.message });
@@ -46,8 +50,8 @@ router.post('/save-registration', async (req, res) => {
 
     // Final server-side duplicate guard — catches race conditions where two
     // requests arrive before either has finished inserting
-    const exists = await studentNumberExists(studentNumber);
-    if (exists) {
+    const existing = await findStudent(studentNumber);
+    if (existing) {
       return res.status(409).json({
         error: 'This student number is already registered.',
         duplicate: true
