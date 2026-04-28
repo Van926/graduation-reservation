@@ -337,6 +337,7 @@ export default function App() {
   const [loading, setLoading]                       = useState(false);
   const [emailSent, setEmailSent]                   = useState(false);
   const [studentNumberError, setStudentNumberError] = useState("");
+  const [studentNumberStatus, setStudentNumberStatus] = useState("idle"); // idle | checking | available | taken
   const [parent1Scanned, setParent1Scanned]         = useState(false);
   const [parent2Scanned, setParent2Scanned]         = useState(false);
   const [parent1ScannedAt, setParent1ScannedAt]     = useState(null);
@@ -355,6 +356,39 @@ export default function App() {
       .then(() => setIsApiConnected(true))
       .catch(() => setIsApiConnected(false));
   }, []);
+
+
+  // ── Debounced real-time student number duplicate check ────────────────────
+  useEffect(() => {
+    if (!studentNumber || studentNumber.length < 3) {
+      setStudentNumberStatus("idle");
+      setStudentNumberError("");
+      return;
+    }
+    setStudentNumberStatus("checking");
+    setStudentNumberError("");
+    const timer = setTimeout(async () => {
+      try {
+        const res = await fetch(`${API_BASE_URL}/api/check-student-number`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ studentNumber }),
+        });
+        if (!res.ok) { setStudentNumberStatus("idle"); return; }
+        const { exists } = await res.json();
+        if (exists) {
+          setStudentNumberStatus("taken");
+          setStudentNumberError("This student number is already registered.");
+        } else {
+          setStudentNumberStatus("available");
+          setStudentNumberError("");
+        }
+      } catch {
+        setStudentNumberStatus("idle");
+      }
+    }, 600);
+    return () => clearTimeout(timer);
+  }, [studentNumber]);
 
   useEffect(() => {
     if (!submitted) return;
@@ -392,6 +426,7 @@ export default function App() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!isApiConnected) { alert("Backend server is not connected."); return; }
+    if (studentNumberStatus === "taken") { setStudentNumberError("This student number is already registered."); return; }
     try {
       const checkRes = await fetch(`${API_BASE_URL}/api/check-student-number`, {
         method: "POST", headers: { "Content-Type": "application/json" },
@@ -409,7 +444,13 @@ export default function App() {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ studentName, studentNumber, course, email, contactNumber, parent1, parent2, qrCodeParent1: qr1, qrCodeParent2: qr2 }),
       });
-      if (!saveRes.ok) { const e = await saveRes.json(); throw new Error(e.error || "Failed to save."); }
+      const saveData = await saveRes.json();
+      if (saveRes.status === 409 || saveData.duplicate) {
+        setStudentNumberStatus("taken");
+        setStudentNumberError("This student number is already registered.");
+        return;
+      }
+      if (!saveRes.ok) { throw new Error(saveData.error || "Failed to save."); }
       setSubmitted(true);
     } catch (err) { alert("Registration failed: " + err.message); }
   };
@@ -437,7 +478,7 @@ export default function App() {
       <div className="form-card">
 
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12, marginBottom: 4 }}>
-          <h1 className="form-title" style={{ margin: 0 }}>LCC Graduation Reservation</h1>
+          <h1 className="form-title" style={{ margin: 0 }}>LCC Commencement Exercises 2025-2026</h1>
           <button onClick={() => setShowGate(true)} style={{ background: "#6366f1", color: "#fff", border: "none", borderRadius: 8, padding: "8px 16px", cursor: "pointer", fontSize: 13, fontWeight: 600 }}>
             🔒 View Registrations
           </button>
@@ -461,13 +502,34 @@ export default function App() {
 
             <label className="form-label">Student Number <span className="required-asterisk">*</span></label>
             <input type="text" placeholder="Enter your student number" value={studentNumber}
-              onChange={(e) => { setStudentNumber(e.target.value.replace(/[^0-9]/g, "")); setStudentNumberError(""); }}
-              className="form-input" required />
-            {studentNumberError && <p className="error-message">{studentNumberError}</p>}
+              onChange={(e) => { setStudentNumber(e.target.value.replace(/[^0-9]/g, "")); }}
+              className="form-input"
+              style={{
+                borderColor:
+                  studentNumberStatus === "taken"     ? "#ef4444" :
+                  studentNumberStatus === "available" ? "#22c55e" :
+                  studentNumberStatus === "checking"  ? "#6366f1" :
+                  undefined,
+                transition: "border-color 0.2s",
+              }}
+              required />
+            {studentNumber.length >= 3 && (
+              <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 6, fontSize: 13, minHeight: 20 }}>
+                {studentNumberStatus === "checking" && (
+                  <><span style={{ color: "#6366f1" }}>⟳</span><span style={{ color: "#6366f1" }}>Checking availability…</span></>
+                )}
+                {studentNumberStatus === "available" && (
+                  <><span style={{ color: "#22c55e" }}>✓</span><span style={{ color: "#22c55e" }}>Student number is available</span></>
+                )}
+                {studentNumberStatus === "taken" && (
+                  <><span style={{ color: "#ef4444" }}>✕</span><span style={{ color: "#ef4444" }}>This student number is already registered</span></>
+                )}
+              </div>
+            )}
 
-            <label className="form-label">Course <span className="required-asterisk">*</span></label>
+            <label className="form-label">Department <span className="required-asterisk">*</span></label>
             <select value={course} onChange={(e) => setCourse(e.target.value)} className="form-input" required>
-              <option value="">Select a course</option>
+              <option value="">Select a department</option>
               <option value="CELA">CELA</option>
               <option value="CBA">CBA</option>
               <option value="CCJE">CCJE</option>
@@ -488,7 +550,7 @@ export default function App() {
             <label className="form-label">Parent 2 Name (Optional)</label>
             <input type="text" placeholder="Parent/Guardian 2 full name" value={parent2} onChange={(e) => setParent2(e.target.value)} className="form-input" />
 
-            <button type="submit" className="submit-btn" disabled={!isApiConnected}>Generate QR Code</button>
+            <button type="submit" className="submit-btn" disabled={!isApiConnected || studentNumberStatus === "taken" || studentNumberStatus === "checking"}>Generate QR Code</button>
           </form>
         ) : (
           <div className="qr-section">
