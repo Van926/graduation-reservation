@@ -32,7 +32,8 @@ app.get('/', (_req, res) => {
       'POST /api/scan-qr',
       'POST /api/check-qr-status',
       'POST /api/send-qr-email',
-      'GET  /api/registrations?filter=all|scanned|unscanned'
+      'GET  /api/registrations?filter=all|scanned|unscanned',
+      'POST /api/update-registration'
     ]
   });
 });

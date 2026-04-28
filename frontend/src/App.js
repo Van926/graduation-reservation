@@ -568,37 +568,43 @@ function AdminPage({ onLogout }) {
   );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// StudentPage — registration form + QR display
-// ─────────────────────────────────────────────────────────────────────────────
 function StudentPage({ studentInfo, onLogout }) {
   const initialStudentNumber = studentInfo?.studentNumber || "";
-  const [studentName, setStudentName]               = useState("");
-  const [studentNumber, setStudentNumber]           = useState(initialStudentNumber);
-  const [course, setCourse]                         = useState(studentInfo?.course || "");
-  const [email, setEmail]                           = useState("");
-  const [contactNumber, setContactNumber]           = useState("");
-  const [parent1, setParent1]                       = useState("");
-  const [parent2, setParent2]                       = useState("");
-  const [submitted, setSubmitted]                   = useState(false);
-  const [loading, setLoading]                       = useState(false);
-  const [emailSent, setEmailSent]                   = useState(false);
-  const [studentNumberError, setStudentNumberError] = useState("");
-  // Pre-fill name from login data if available
-  useEffect(() => {
-    if (studentInfo?.studentName) setStudentName(studentInfo.studentName);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  const hasRegistration      = studentInfo?.hasRegistration || false;
 
-  const [studentNumberStatus, setStudentNumberStatus] = useState(initialStudentNumber ? "available" : "idle");
-  const [parent1Scanned, setParent1Scanned]         = useState(false);
-  const [parent2Scanned, setParent2Scanned]         = useState(false);
-  const [parent1ScannedAt, setParent1ScannedAt]     = useState(null);
-  const [parent2ScannedAt, setParent2ScannedAt]     = useState(null);
-  const [isApiConnected, setIsApiConnected]         = useState(false);
+  // ── view | "form" (new registration) | "edit" (editing existing) | "qr" ──
+  const [mode, setMode]                 = useState("form");
+  const [studentName, setStudentName]   = useState(studentInfo?.studentName    || "");
+  const [studentNumber]                 = useState(initialStudentNumber);
+  const [course, setCourse]             = useState(studentInfo?.course         || "");
+  const [email, setEmail]               = useState("");
+  const [contactNumber, setContactNumber] = useState("");
+  const [parent1, setParent1]           = useState("");
+  const [parent2, setParent2]           = useState("");
+  const [loading, setLoading]           = useState(false);
+  const [emailSent, setEmailSent]       = useState(false);
+  const [isApiConnected, setIsApiConnected] = useState(false);
+  const [parent1Scanned, setParent1Scanned]     = useState(false);
+  const [parent2Scanned, setParent2Scanned]     = useState(false);
+  const [parent1ScannedAt, setParent1ScannedAt] = useState(null);
+  const [parent2ScannedAt, setParent2ScannedAt] = useState(null);
+  const [isEditing, setIsEditing] = useState(false);
+  const [dataLoaded, setDataLoaded] = useState(false);
+  const [originalData, setOriginalData] = useState({});
+  const [showUpdatePrompt, setShowUpdatePrompt] = useState(false);
+  const [registrationExists, setRegistrationExists] = useState(false);
+
+  // Edit mode — working copies
+  const [editParent1, setEditParent1] = useState("");
+  const [editParent2, setEditParent2] = useState("");
+  const [editEmail, setEditEmail]     = useState("");
+  const [editContact, setEditContact] = useState("");
 
   const qrValueParent1 = `${API_BASE_URL}/scan?parent=${encodeURIComponent(parent1)}`;
   const qrValueParent2 = parent2 ? `${API_BASE_URL}/scan?parent=${encodeURIComponent(parent2)}` : null;
+
+  // Helper function for formatting dates
+  const fmt = (d) => d ? new Date(d).toLocaleString() : "";
 
   useEffect(() => {
     fetch(`${API_BASE_URL}/api/health`)
@@ -607,78 +613,228 @@ function StudentPage({ studentInfo, onLogout }) {
       .catch(() => setIsApiConnected(false));
   }, []);
 
-  // Debounced student number check (only if user changes it from the pre-filled value)
+  // Fetch ALL registration data on login
   useEffect(() => {
-    if (!studentNumber || studentNumber.length < 3) { setStudentNumberStatus("idle"); return; }
-    if (studentNumber === initialStudentNumber) { setStudentNumberStatus("available"); return; }
-    setStudentNumberStatus("checking");
-    const timer = setTimeout(async () => {
+    const fetchRegistrationData = async () => {
+      if (!studentNumber) {
+        console.log('No student number available');
+        setDataLoaded(true);
+        return;
+      }
+      
+      console.log('Fetching registration data for:', studentNumber);
+      
       try {
         const res = await fetch(`${API_BASE_URL}/api/check-student-number`, {
-          method: "POST", headers: { "Content-Type": "application/json" },
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ studentNumber }),
         });
-        if (!res.ok) { setStudentNumberStatus("idle"); return; }
-        const { exists } = await res.json();
-        setStudentNumberStatus(exists ? "taken" : "available");
-        if (exists) setStudentNumberError("This student number is already registered.");
-        else setStudentNumberError("");
-      } catch { setStudentNumberStatus("idle"); }
-    }, 600);
-    return () => clearTimeout(timer);
-  }, [studentNumber, initialStudentNumber]);
+        
+        const data = await res.json();
+        console.log('Received data:', data);
+        
+        if (data.exists) {
+          setRegistrationExists(true);
+          console.log('Parent1 from DB:', data.parent1_name);
+          console.log('Parent2 from DB:', data.parent2_name);
+          
+          // Populate ALL fields from database
+          setStudentName(data.student_name || "");
+          setCourse(data.course || "");
+          setEmail(data.email || "");
+          setContactNumber(data.contact_number || "");
+          setParent1(data.parent1_name || "");
+          setParent2(data.parent2_name || "");
+          setParent1Scanned(data.parent1_scanned || false);
+          setParent2Scanned(data.parent2_scanned || false);
+          
+          // Store original data for comparison
+          setOriginalData({
+            email: data.email || "",
+            contact_number: data.contact_number || "",
+            parent1_name: data.parent1_name || "",
+            parent2_name: data.parent2_name || ""
+          });
+          
+          // Set edit copies
+          setEditParent1(data.parent1_name || "");
+          setEditParent2(data.parent2_name || "");
+          setEditEmail(data.email || "");
+          setEditContact(data.contact_number || "");
+          
+          // If parent names exist, show update prompt
+          if (data.parent1_name) {
+            console.log('Parent names detected, showing update prompt');
+            setShowUpdatePrompt(true);
+          } else {
+            setMode("form");
+          }
+        } else {
+          console.log('No existing registration found');
+          setRegistrationExists(false);
+          setMode("form");
+        }
+        setDataLoaded(true);
+      } catch (err) {
+        console.error("Error fetching registration data:", err);
+        setDataLoaded(true);
+      }
+    };
 
+    if (!dataLoaded) {
+      fetchRegistrationData();
+    }
+  }, [studentNumber, dataLoaded]);
+
+  // Poll QR scan status in view/qr mode
   useEffect(() => {
-    if (!submitted) return;
+    if (mode !== "view" && mode !== "qr") return;
+    if (!parent1) return;
+    
     const check = async () => {
       try {
         const r1 = await fetch(`${API_BASE_URL}/api/check-qr-status`, {
           method: "POST", headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ parentName: parent1 }),
         });
-        if (r1.ok) { const d = await r1.json(); setParent1Scanned(d.scanned); setParent1ScannedAt(d.scannedAt); }
+        if (r1.ok) { 
+          const d = await r1.json(); 
+          setParent1Scanned(d.scanned); 
+          setParent1ScannedAt(d.scannedAt); 
+        }
+        
         if (parent2) {
           const r2 = await fetch(`${API_BASE_URL}/api/check-qr-status`, {
             method: "POST", headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ parentName: parent2 }),
           });
-          if (r2.ok) { const d = await r2.json(); setParent2Scanned(d.scanned); setParent2ScannedAt(d.scannedAt); }
+          if (r2.ok) { 
+            const d = await r2.json(); 
+            setParent2Scanned(d.scanned); 
+            setParent2ScannedAt(d.scannedAt); 
+          }
         }
       } catch (e) { console.error("QR scan check error:", e); }
     };
+    
     check();
     const id = setInterval(check, 5000);
     return () => clearInterval(id);
-  }, [submitted, parent1, parent2]);
+  }, [mode, parent1, parent2]);
 
+  // ── New registration submit ───────────────────────────────────────────────
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!isApiConnected) { alert("Backend server is not connected."); return; }
-    if (studentNumberStatus === "taken") { setStudentNumberError("This student number is already registered."); return; }
+    setLoading(true);
     try {
-      const checkRes = await fetch(`${API_BASE_URL}/api/check-student-number`, {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ studentNumber }),
-      });
-      if (!checkRes.ok) { setStudentNumberError("Server error. Please try again."); return; }
-      const { exists } = await checkRes.json();
-      if (exists) { setStudentNumberStatus("taken"); setStudentNumberError("This student number is already registered."); return; }
-      setStudentNumberError("");
-
       const qr1 = await QRCodeLib.toDataURL(qrValueParent1);
       const qr2 = qrValueParent2 ? await QRCodeLib.toDataURL(qrValueParent2) : null;
-
       const saveRes = await fetch(`${API_BASE_URL}/api/save-registration`, {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ studentName, studentNumber, course, email, contactNumber, parent1, parent2, qrCodeParent1: qr1, qrCodeParent2: qr2 }),
+        body: JSON.stringify({ 
+          studentName, studentNumber, course, email, contactNumber, 
+          parent1, parent2, qrCodeParent1: qr1, qrCodeParent2: qr2 
+        }),
       });
       const saveData = await saveRes.json();
-      if (saveRes.status === 409 || saveData.duplicate) { setStudentNumberStatus("taken"); setStudentNumberError("This student number is already registered."); return; }
       if (!saveRes.ok) throw new Error(saveData.error || "Failed to save.");
-      setSubmitted(true);
+      
+      // Show different message based on whether it was an update or first-time registration
+      if (saveData.isUpdate) {
+        alert("Your registration has been updated successfully!");
+      } else {
+        alert("Your registration has been saved successfully!");
+      }
+      
+      // Update the original data after successful save
+      setOriginalData({
+        email: email,
+        contact_number: contactNumber,
+        parent1_name: parent1,
+        parent2_name: parent2
+      });
+      
+      setMode("qr");
     } catch (err) { alert("Registration failed: " + err.message); }
+    finally { setLoading(false); }
   };
 
+  // ── Check if any data has been modified ──────────────────────────────────
+  const hasChanges = () => {
+    return (
+      editEmail !== originalData.email ||
+      editContact !== originalData.contact_number ||
+      editParent1 !== originalData.parent1_name ||
+      editParent2 !== originalData.parent2_name
+    );
+  };
+
+  // ── Edit save — update all editable fields ──────────────────────────────────
+  const handleEditSave = async (e) => {
+    e.preventDefault();
+    if (!editParent1.trim()) { alert("Parent 1 name is required."); return; }
+    if (!editEmail.trim()) { alert("Email is required."); return; }
+    if (!editContact.trim()) { alert("Contact number is required."); return; }
+    
+    if (!hasChanges()) {
+      alert("No changes detected. Please modify at least one field.");
+      return;
+    }
+    
+    if (!window.confirm("Update your information? New QR codes will be generated.")) return;
+    
+    setLoading(true);
+    try {
+      const newQrVal1 = `${API_BASE_URL}/scan?parent=${encodeURIComponent(editParent1)}`;
+      const newQrVal2 = editParent2 ? `${API_BASE_URL}/scan?parent=${encodeURIComponent(editParent2)}` : null;
+      const qr1 = await QRCodeLib.toDataURL(newQrVal1);
+      const qr2 = newQrVal2 ? await QRCodeLib.toDataURL(newQrVal2) : null;
+
+      const res = await fetch(`${API_BASE_URL}/api/update-registration`, {
+        method: "PUT", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          studentNumber,
+          email: editEmail,
+          contactNumber: editContact,
+          parent1: editParent1,
+          parent2: editParent2,
+          qrCodeParent1: qr1,
+          qrCodeParent2: qr2,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to update.");
+
+      // Commit edits into live state
+      setParent1(editParent1);
+      setParent2(editParent2);
+      setEmail(editEmail);
+      setContactNumber(editContact);
+      
+      // Update original data
+      setOriginalData({
+        email: editEmail,
+        contact_number: editContact,
+        parent1_name: editParent1,
+        parent2_name: editParent2
+      });
+      
+      setParent1Scanned(false); 
+      setParent1ScannedAt(null);
+      setParent2Scanned(false); 
+      setParent2ScannedAt(null);
+      setEmailSent(false);
+      setIsEditing(false);
+      setMode("qr");
+      
+      alert("Your information has been updated successfully!");
+    } catch (err) { alert("Update failed: " + err.message); }
+    finally { setLoading(false); }
+  };
+
+  // ── Send email ────────────────────────────────────────────────────────────
   const handleSendEmail = async () => {
     setLoading(true);
     try {
@@ -696,6 +852,120 @@ function StudentPage({ studentInfo, onLogout }) {
     finally { setLoading(false); }
   };
 
+  // ── Cancel edit and restore original values ──────────────────────────────
+  const handleCancelEdit = () => {
+    setEditParent1(originalData.parent1_name);
+    setEditParent2(originalData.parent2_name);
+    setEditEmail(originalData.email);
+    setEditContact(originalData.contact_number);
+    setIsEditing(false);
+  };
+
+  // ── Go back to summary (view mode) ───────────────────────────────────────
+  const handleBackToSummary = () => {
+    setMode("view");
+    setIsEditing(false);
+  };
+
+  // ── Handle update prompt choices ─────────────────────────────────────────
+  const handleViewOnly = () => {
+    setShowUpdatePrompt(false);
+    setMode("view");
+  };
+
+  const handleUpdateInfo = () => {
+    setShowUpdatePrompt(false);
+    setIsEditing(true);
+    setMode("view");
+  };
+
+  // ── Shared locked field style ─────────────────────────────────────────────
+  const lockedStyle = { background: "#12121a", color: "#555566", cursor: "not-allowed", borderColor: "#1e1e28" };
+
+  // Show loading while fetching data
+  if (!dataLoaded) {
+    return (
+      <div className="app-container">
+        <div className="form-card">
+          <p>Loading your registration data...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Show update prompt if parent names exist
+  if (showUpdatePrompt) {
+    return (
+      <div className="app-container">
+        <div className="form-card">
+          <div style={{ textAlign: "center" }}>
+            <h1 className="form-title" style={{ marginBottom: 20 }}>Welcome Back, {studentName}!</h1>
+            <p className="form-description" style={{ marginBottom: 30 }}>
+              You have already registered for the graduation ceremony.
+            </p>
+            
+            <div style={{ background: "#12121a", border: "1px solid #1e1e28", borderRadius: 12, padding: 20, marginBottom: 20, textAlign: "left" }}>
+              <p style={{ fontSize: 11, fontWeight: 600, letterSpacing: "0.1em", textTransform: "uppercase", color: "#555566", marginBottom: 12 }}>Your Current Registration</p>
+              <div style={{ display: "flex", justifyContent: "space-between", padding: "7px 0", borderBottom: "1px solid #1a1a22" }}>
+                <span style={{ fontSize: 13, color: "#555566" }}>Student Name</span>
+                <span style={{ fontSize: 13, color: "#c8c8de", fontWeight: 500 }}>{studentName}</span>
+              </div>
+              <div style={{ display: "flex", justifyContent: "space-between", padding: "7px 0", borderBottom: "1px solid #1a1a22" }}>
+                <span style={{ fontSize: 13, color: "#555566" }}>Student Number</span>
+                <span style={{ fontSize: 13, color: "#c8c8de", fontWeight: 500 }}>{studentNumber}</span>
+              </div>
+              <div style={{ display: "flex", justifyContent: "space-between", padding: "7px 0", borderBottom: "1px solid #1a1a22" }}>
+                <span style={{ fontSize: 13, color: "#555566" }}>Course</span>
+                <span style={{ fontSize: 13, color: "#c8c8de", fontWeight: 500 }}>{course}</span>
+              </div>
+              <div style={{ display: "flex", justifyContent: "space-between", padding: "7px 0", borderBottom: "1px solid #1a1a22" }}>
+                <span style={{ fontSize: 13, color: "#555566" }}>Email</span>
+                <span style={{ fontSize: 13, color: "#c8c8de", fontWeight: 500 }}>{email}</span>
+              </div>
+              <div style={{ display: "flex", justifyContent: "space-between", padding: "7px 0", borderBottom: "1px solid #1a1a22" }}>
+                <span style={{ fontSize: 13, color: "#555566" }}>Contact Number</span>
+                <span style={{ fontSize: 13, color: "#c8c8de", fontWeight: 500 }}>{contactNumber}</span>
+              </div>
+              <div style={{ display: "flex", justifyContent: "space-between", padding: "7px 0", borderBottom: "1px solid #1a1a22" }}>
+                <span style={{ fontSize: 13, color: "#555566" }}>Parent 1</span>
+                <span style={{ fontSize: 13, color: "#c8c8de", fontWeight: 500 }}>{parent1}</span>
+              </div>
+              <div style={{ display: "flex", justifyContent: "space-between", padding: "7px 0" }}>
+                <span style={{ fontSize: 13, color: "#555566" }}>Parent 2</span>
+                <span style={{ fontSize: 13, color: "#c8c8de", fontWeight: 500 }}>{parent2 || "Not provided"}</span>
+              </div>
+            </div>
+            
+            <p className="form-description" style={{ marginBottom: 20 }}>
+              What would you like to do?
+            </p>
+            
+            <div style={{ display: "flex", gap: 10, flexDirection: "column" }}>
+              <button 
+                onClick={handleUpdateInfo}
+                style={{ background: "#f59e0b", color: "#111", border: "none", borderRadius: 8, padding: "12px 0", fontSize: 14, fontWeight: 700, cursor: "pointer" }}
+              >
+                ✏️ Update My Information
+              </button>
+              <button 
+                onClick={handleViewOnly}
+                style={{ background: "#6366f1", color: "#fff", border: "none", borderRadius: 8, padding: "12px 0", fontSize: 14, fontWeight: 600, cursor: "pointer" }}
+              >
+                👁️ View My QR Codes
+              </button>
+              <button 
+                onClick={onLogout}
+                style={{ background: "transparent", border: "1px solid #2a2a35", color: "#888899", borderRadius: 8, padding: "12px 0", fontSize: 14, cursor: "pointer" }}
+              >
+                🚪 Logout
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="app-container">
       <div className="form-card">
@@ -704,41 +974,177 @@ function StudentPage({ studentInfo, onLogout }) {
           <button onClick={onLogout} style={{ background: "transparent", border: "1px solid #2a2a35", color: "#888899", borderRadius: 8, padding: "8px 16px", cursor: "pointer", fontSize: 13 }}>Logout</button>
         </div>
 
-        <p className="form-description">
-          Fill out the form below to reserve your spot for the LCC graduation ceremony.
-          You can reserve up to 2 spots only. After submitting, a QR code will be generated
-          for each reserved spot. Show the QR code(s) during graduation to gain entry.
-          The QR code(s) will also be sent to your email for safekeeping.
-        </p>
-
         {!isApiConnected && <div className="warning-message">⚠️ Connecting to server… Please wait.</div>}
 
-        {!submitted ? (
-          <form onSubmit={handleSubmit} className="form">
-            <label className="form-label">Student Name</label>
-            <input type="text" value={studentName || "—"} readOnly className="form-input" style={{ background: "#12121a", color: "#555566", cursor: "not-allowed", borderColor: "#1e1e28" }} tabIndex={-1} />
+        {/* ── VIEW mode: existing registration summary ── */}
+        {mode === "view" && !isEditing && (
+          <div>
+            <p className="form-description">Your registration details are shown below.</p>
 
-            <label className="form-label">Student Number</label>
-            <input type="text" value={studentNumber || "—"} readOnly className="form-input" style={{ background: "#12121a", color: "#555566", cursor: "not-allowed", borderColor: "#1e1e28" }} tabIndex={-1} />
+            {/* Student info block */}
+            <div style={{ background: "#12121a", border: "1px solid #1e1e28", borderRadius: 12, padding: 20, marginBottom: 20 }}>
+              <p style={{ fontSize: 11, fontWeight: 600, letterSpacing: "0.1em", textTransform: "uppercase", color: "#555566", marginBottom: 12 }}>Student Information</p>
+              {[["Name", studentName], ["Student Number", studentNumber], ["Course", course]].map(([label, val]) => (
+                <div key={label} style={{ display: "flex", justifyContent: "space-between", padding: "7px 0", borderBottom: "1px solid #1a1a22" }}>
+                  <span style={{ fontSize: 13, color: "#555566" }}>{label}</span>
+                  <span style={{ fontSize: 13, color: "#c8c8de", fontWeight: 500 }}>{val || "—"}</span>
+                </div>
+              ))}
+            </div>
 
-            <label className="form-label">Course</label>
-            <input type="text" value={course || "—"} readOnly className="form-input" style={{ background: "#12121a", color: "#555566", cursor: "not-allowed", borderColor: "#1e1e28" }} tabIndex={-1} />
+            {/* Contact Info Block */}
+            <div style={{ background: "#12121a", border: "1px solid #1e1e28", borderRadius: 12, padding: 20, marginBottom: 20 }}>
+              <p style={{ fontSize: 11, fontWeight: 600, letterSpacing: "0.1em", textTransform: "uppercase", color: "#555566", marginBottom: 12 }}>Contact Information</p>
+              {[["Email", email || "—"], ["Contact Number", contactNumber || "—"]].map(([label, val]) => (
+                <div key={label} style={{ display: "flex", justifyContent: "space-between", padding: "7px 0", borderBottom: "1px solid #1a1a22" }}>
+                  <span style={{ fontSize: 13, color: "#555566" }}>{label}</span>
+                  <span style={{ fontSize: 13, color: val === "—" ? "#333344" : "#c8c8de", fontWeight: 500 }}>{val}</span>
+                </div>
+              ))}
+            </div>
 
-            <label className="form-label">Email <span className="required-asterisk">*</span></label>
-            <input type="email" placeholder="your.email@example.com" value={email} onChange={e => setEmail(e.target.value)} className="form-input" required />
+            {/* Parent info block */}
+            <div style={{ background: "#12121a", border: "1px solid #1e1e28", borderRadius: 12, padding: 20, marginBottom: 20 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+                <p style={{ fontSize: 11, fontWeight: 600, letterSpacing: "0.1em", textTransform: "uppercase", color: "#555566", margin: 0 }}>Registered Parents / Guardians</p>
+              </div>
+              {[["Parent 1", parent1], ["Parent 2", parent2 || "—"]].map(([label, val]) => (
+                <div key={label} style={{ display: "flex", justifyContent: "space-between", padding: "7px 0", borderBottom: "1px solid #1a1a22" }}>
+                  <span style={{ fontSize: 13, color: "#555566" }}>{label}</span>
+                  <span style={{ fontSize: 13, color: val === "—" ? "#333344" : "#c8c8de", fontWeight: 500 }}>{val}</span>
+                </div>
+              ))}
+              {parent1Scanned && <div style={{ marginTop: 10, fontSize: 12, color: "#22c55e" }}>✓ Parent 1 has been scanned</div>}
+              {parent2Scanned && <div style={{ marginTop: 5, fontSize: 12, color: "#22c55e" }}>✓ Parent 2 has been scanned</div>}
+            </div>
 
-            <label className="form-label">Contact Number <span className="required-asterisk">*</span></label>
-            <input type="tel" placeholder="09123456789" value={contactNumber} onChange={e => setContactNumber(e.target.value.replace(/[^0-9]/g, ""))} className="form-input" required />
+            <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+              <button onClick={() => setMode("qr")}
+                style={{ flex: 1, background: "#6366f1", color: "#fff", border: "none", borderRadius: 8, padding: "11px 0", fontSize: 14, fontWeight: 600, cursor: "pointer" }}>
+                View QR Codes
+              </button>
+              <button onClick={() => setIsEditing(true)}
+                style={{ flex: 1, background: "transparent", color: "#f59e0b", border: "1px solid rgba(245,158,11,0.4)", borderRadius: 8, padding: "11px 0", fontSize: 14, fontWeight: 600, cursor: "pointer" }}>
+                ✏️ Edit Information
+              </button>
+            </div>
+          </div>
+        )}
 
-            <label className="form-label">Parent 1 Name <span className="required-asterisk">*</span></label>
-            <input type="text" placeholder="Parent/Guardian 1 full name" value={parent1} onChange={e => setParent1(e.target.value)} className="form-input" required />
+        {/* ── EDIT mode inline ── */}
+        {isEditing && (
+          <div>
+            <p className="form-description">Edit your registration information. New QR codes will be generated.</p>
+            
+            <div style={{ background: "rgba(245,158,11,0.06)", border: "1px solid rgba(245,158,11,0.2)", borderRadius: 10, padding: "12px 16px", marginBottom: 20, fontSize: 13, color: "#f59e0b" }}>
+              ⚠️ Editing will generate new QR codes. Previously shared QR codes will no longer work.
+            </div>
 
-            <label className="form-label">Parent 2 Name (Optional)</label>
-            <input type="text" placeholder="Parent/Guardian 2 full name" value={parent2} onChange={e => setParent2(e.target.value)} className="form-input" />
+            <form onSubmit={handleEditSave} className="form">
+              <label className="form-label">Student Name</label>
+              <input type="text" value={studentName || "—"} readOnly className="form-input" style={lockedStyle} tabIndex={-1} />
 
-            <button type="submit" className="submit-btn" disabled={!isApiConnected || studentNumberStatus === "taken" || studentNumberStatus === "checking"}>Generate QR Code</button>
-          </form>
-        ) : (
+              <label className="form-label">Student Number</label>
+              <input type="text" value={studentNumber || "—"} readOnly className="form-input" style={lockedStyle} tabIndex={-1} />
+
+              <label className="form-label">Course</label>
+              <input type="text" value={course || "—"} readOnly className="form-input" style={lockedStyle} tabIndex={-1} />
+
+              <label className="form-label">Email <span className="required-asterisk">*</span></label>
+              <input 
+                type="email" 
+                placeholder="your.email@example.com" 
+                value={editEmail} 
+                onChange={e => setEditEmail(e.target.value)} 
+                className="form-input" 
+                required 
+              />
+
+              <label className="form-label">Contact Number <span className="required-asterisk">*</span></label>
+              <input 
+                type="tel" 
+                placeholder="09123456789" 
+                value={editContact} 
+                onChange={e => setEditContact(e.target.value.replace(/[^0-9]/g, ""))} 
+                className="form-input" 
+                required 
+              />
+
+              <label className="form-label">Parent 1 Name <span className="required-asterisk">*</span></label>
+              <input 
+                type="text" 
+                placeholder="Parent/Guardian 1 full name" 
+                value={editParent1} 
+                onChange={e => setEditParent1(e.target.value)} 
+                className="form-input" 
+                required 
+              />
+
+              <label className="form-label">Parent 2 Name (Optional)</label>
+              <input 
+                type="text" 
+                placeholder="Parent/Guardian 2 full name" 
+                value={editParent2} 
+                onChange={e => setEditParent2(e.target.value)} 
+                className="form-input" 
+              />
+
+              <div style={{ display: "flex", gap: 10, marginTop: 8 }}>
+                <button type="button" onClick={handleCancelEdit}
+                  style={{ flex: 1, background: "transparent", border: "1px solid #2a2a35", color: "#888899", borderRadius: 8, padding: "11px 0", fontSize: 14, cursor: "pointer" }}>
+                  Cancel
+                </button>
+                <button 
+                  type="submit" 
+                  disabled={loading || !editParent1.trim() || !editEmail.trim() || !editContact.trim() || !hasChanges()}
+                  style={{ flex: 2, background: "#f59e0b", color: "#111", border: "none", borderRadius: 8, padding: "11px 0", fontSize: 14, fontWeight: 700, 
+                    cursor: (!loading && editParent1.trim() && editEmail.trim() && editContact.trim() && hasChanges()) ? "pointer" : "not-allowed", 
+                    opacity: (!loading && editParent1.trim() && editEmail.trim() && editContact.trim() && hasChanges()) ? 1 : 0.5 }}>
+                  {loading ? "Saving…" : "Save Changes & Generate New QR Codes"}
+                </button>
+              </div>
+            </form>
+          </div>
+        )}
+
+        {/* ── FORM mode: new registration ── */}
+        {mode === "form" && (
+          <div>
+            <p className="form-description">
+              Fill out the form below to reserve your spot for the LCC graduation ceremony.
+              You can reserve up to 2 spots only.
+            </p>
+            <form onSubmit={handleSubmit} className="form">
+              <label className="form-label">Student Name</label>
+              <input type="text" value={studentName || "—"} readOnly className="form-input" style={lockedStyle} tabIndex={-1} />
+
+              <label className="form-label">Student Number</label>
+              <input type="text" value={studentNumber || "—"} readOnly className="form-input" style={lockedStyle} tabIndex={-1} />
+
+              <label className="form-label">Course</label>
+              <input type="text" value={course || "—"} readOnly className="form-input" style={lockedStyle} tabIndex={-1} />
+
+              <label className="form-label">Email <span className="required-asterisk">*</span></label>
+              <input type="email" placeholder="your.email@example.com" value={email} onChange={e => setEmail(e.target.value)} className="form-input" required />
+
+              <label className="form-label">Contact Number <span className="required-asterisk">*</span></label>
+              <input type="tel" placeholder="09123456789" value={contactNumber} onChange={e => setContactNumber(e.target.value.replace(/[^0-9]/g, ""))} className="form-input" required />
+
+              <label className="form-label">Parent 1 Name <span className="required-asterisk">*</span></label>
+              <input type="text" placeholder="Parent/Guardian 1 full name" value={parent1} onChange={e => setParent1(e.target.value)} className="form-input" required />
+
+              <label className="form-label">Parent 2 Name (Optional)</label>
+              <input type="text" placeholder="Parent/Guardian 2 full name" value={parent2} onChange={e => setParent2(e.target.value)} className="form-input" />
+
+              <button type="submit" className="submit-btn" disabled={!isApiConnected || loading}>
+                {loading ? "Generating…" : "Generate QR Code"}
+              </button>
+            </form>
+          </div>
+        )}
+
+        {/* ── QR mode ── */}
+        {mode === "qr" && (
           <div className="qr-section">
             <p className="qr-title">Reservation QR Code{parent2 ? "s" : ""}</p>
             <div className="qr-container">
@@ -759,13 +1165,14 @@ function StudentPage({ studentInfo, onLogout }) {
                 </div>
               )}
             </div>
-            <p className="qr-text">Show {parent2 ? "these QR codes" : "this QR code"} during graduation. Do not share these with others as they are one-time use only.</p>
+            <p className="qr-text">Show {parent2 ? "these QR codes" : "this QR code"} during graduation. Do not share with others as they are one-time use only.</p>
             {emailSent ? <p className="email-sent-message">✓ QR codes sent to {email}</p> : (
               <button onClick={handleSendEmail} disabled={loading} className="send-email-btn">{loading ? "Sending…" : "Send QR Codes to Email"}</button>
             )}
-            <button onClick={() => { setSubmitted(false); setEmailSent(false); }} className="back-btn">Back to Form</button>
+            <button onClick={handleBackToSummary} className="back-btn">← Back to Summary</button>
           </div>
         )}
+
       </div>
     </div>
   );

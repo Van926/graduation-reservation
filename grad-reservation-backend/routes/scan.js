@@ -110,7 +110,7 @@ function renderPage({ status, title, message, parentName, studentName, color }) 
 
   const detailsHtml = (parentName && studentName) ? `
     <div class="details">
-      <div class="detail-row"><span class="label">Guest</span><span class="value">${escHtml(parentName)}</span></div>
+      <div class="detail-row"><span class="label">Parent</span><span class="value">${escHtml(parentName)}</span></div>
       <div class="detail-row"><span class="label">Student</span><span class="value">${escHtml(studentName)}</span></div>
     </div>
   ` : '';
