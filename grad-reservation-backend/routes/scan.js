@@ -3,6 +3,15 @@ const supabase = require('../lib/supabase');
 
 const router = Router();
 
+function isBeforeEventDate() {
+  const eventDate = process.env.EVENT_DATE || null;
+  if (!eventDate) return true;
+  const now   = new Date();
+  const event = new Date(eventDate + 'T00:00:00+08:00');
+  return now < event;
+}
+
+
 /**
  * GET /scan?parent=Juan+Santos
  * Landing page opened when a phone scans the QR code.
@@ -33,7 +42,7 @@ async function handleScan(req, res) {
     // Find the registration row
     const { data, error } = await supabase
       .from('registrations')
-      .select('id, student_name, parent1_name, parent2_name, parent1_scanned, parent2_scanned, parent1_scanned_at, parent2_scanned_at')
+      .select('id, student_name, course, parent1_name, parent2_name, parent1_scanned, parent2_scanned, parent1_scanned_at, parent2_scanned_at')
       .or(`parent1_name.eq."${parentName}",parent2_name.eq."${parentName}"`)
       .single();
 
@@ -46,12 +55,13 @@ async function handleScan(req, res) {
       }));
     }
 
-    const isParent1 = data.parent1_name === parentName;
-    const alreadyScanned = isParent1 ? data.parent1_scanned : data.parent2_scanned;
+    const isParent1      = data.parent1_name === parentName;
+    const alreadyScanned = isParent1 ? data.parent1_scanned    : data.parent2_scanned;
     const scannedAt      = isParent1 ? data.parent1_scanned_at : data.parent2_scanned_at;
+    const beforeEvent    = isBeforeEventDate();
 
-    // Already used
-    if (alreadyScanned) {
+    // After event date and already scanned — one-time use enforced
+    if (alreadyScanned && !beforeEvent) {
       const when = scannedAt
         ? new Date(scannedAt).toLocaleString('en-PH', { timeZone: 'Asia/Manila' })
         : 'earlier';
@@ -62,14 +72,16 @@ async function handleScan(req, res) {
         message: `This QR code was already scanned on ${when}. Each code is valid for one entry only.`,
         parentName,
         studentName: data.student_name,
+        course: data.course,
         color: '#f59e0b'
       }));
     }
 
-    // Mark as scanned
+    // Record the scan (new scan or re-scan before event date)
+    const now         = new Date().toISOString();
     const updateField = isParent1
-      ? { parent1_scanned: true, parent1_scanned_at: new Date().toISOString() }
-      : { parent2_scanned: true, parent2_scanned_at: new Date().toISOString() };
+      ? { parent1_scanned: true, parent1_scanned_at: now }
+      : { parent2_scanned: true, parent2_scanned_at: now };
 
     const { error: updateError } = await supabase
       .from('registrations')
@@ -78,12 +90,44 @@ async function handleScan(req, res) {
 
     if (updateError) throw updateError;
 
+    // Re-scan before event date
+    if (alreadyScanned && beforeEvent) {
+      const when = scannedAt
+        ? new Date(scannedAt).toLocaleString('en-PH', { timeZone: 'Asia/Manila' })
+        : 'earlier';
+
+      return res.send(renderPage({
+        status: 'rescan',
+        title: 'Re-entry Verified',
+        message: `QR code verified. This guest has been checked in again.`,
+        detail: `Previously scanned: ${when}`,
+        parentName,
+        studentName: data.student_name,
+        course: data.course,
+        color: '#6366f1'
+      }));
+    }
+
+    // First-time scan before event date — test scan
+    if (beforeEvent) {
+      return res.send(renderPage({
+        status: 'test',
+        title: 'Test Scan',
+        message: `QR code is valid. This is a test scan — the event has not started yet.`,
+        parentName,
+        studentName: data.student_name,
+        course: data.course,
+        color: '#06b6d4'
+      }));
+    }
+
     return res.send(renderPage({
       status: 'success',
       title: 'Entry Approved',
       message: `Welcome! You have been successfully checked in for the LCC Graduation Ceremony.`,
       parentName,
       studentName: data.student_name,
+      course: data.course,
       color: '#22c55e'
     }));
 
@@ -99,9 +143,11 @@ async function handleScan(req, res) {
 }
 
 // ─── HTML renderer ────────────────────────────────────────────────────────────
-function renderPage({ status, title, message, parentName, studentName, color }) {
+function renderPage({ status, title, message, detail, parentName, studentName, course, color }) {
   const icons = {
     success:  '✓',
+    test:     '⚡',
+    rescan:   '↻',
     inactive: '⚠',
     error:    '✕'
   };
@@ -112,6 +158,8 @@ function renderPage({ status, title, message, parentName, studentName, color }) 
     <div class="details">
       <div class="detail-row"><span class="label">Parent</span><span class="value">${escHtml(parentName)}</span></div>
       <div class="detail-row"><span class="label">Student</span><span class="value">${escHtml(studentName)}</span></div>
+      ${course ? `<div class="detail-row"><span class="label">Course</span><span class="value">${escHtml(course)}</span></div>` : ''}
+      ${detail ? `<div class="detail-row"><span class="label">Note</span><span class="value">${escHtml(detail)}</span></div>` : ''}
     </div>
   ` : '';
 

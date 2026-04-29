@@ -6,6 +6,15 @@ import "./RegistrationsPage.css";
 
 const API_BASE_URL    = process.env.REACT_APP_API_URL      || "https://grad-reservation-backend.vercel.app";
 const ADMIN_PASSWORD  = process.env.REACT_APP_ADMIN_PASSWORD || "admin123";
+// YYYY-MM-DD format e.g. "2025-06-15" — set via REACT_APP_EVENT_DATE env var
+const EVENT_DATE      = process.env.REACT_APP_EVENT_DATE || null;
+
+function isBeforeEventDate() {
+  if (!EVENT_DATE) return true;
+  const now   = new Date();
+  const event = new Date(EVENT_DATE + "T00:00:00+08:00");
+  return now < event;
+}
 
 const fmt = (iso) => {
   if (!iso) return "—";
@@ -38,19 +47,42 @@ function ScanPage({ parentName }) {
     })
       .then(r => r.json().then(d => ({ ok: r.ok, d })))
       .then(({ ok, d }) => {
-        if (!ok)            { setStatus("error");    setMessage(d.error || "Failed to validate."); }
-        else if (d.inactive){ setStatus("inactive"); setScannedAt(d.scannedAt); setMessage("This QR code has already been used."); }
-        else if (d.success) { setStatus("success");  setMessage("Entry approved. Welcome to the LCC Graduation Ceremony!"); }
-        else                { setStatus("error");    setMessage(d.error || "Unexpected response."); }
+        if (!ok) {
+          setStatus("error");
+          setMessage(d.error || "Failed to validate.");
+        } else if (d.inactive) {
+          // One-time use enforced — event has already passed
+          setStatus("inactive");
+          setScannedAt(d.scannedAt);
+          setMessage("This QR code has already been used and the event has passed.");
+        } else if (d.success && d.rescan) {
+          // Valid re-scan before event date
+          setStatus("rescan");
+          setScannedAt(d.scannedAt);
+          setMessage("QR code verified. This guest has been checked in again.");
+        } else if (d.success && d.beforeEvent) {
+          // First-time scan before event date — test scan
+          setStatus("test");
+          setMessage("QR code is valid. This is a test scan — the event has not started yet.");
+        } else if (d.success) {
+          // First-time scan on/after event date
+          setStatus("success");
+          setMessage("Entry approved. Welcome to the LCC Graduation Ceremony!");
+        } else {
+          setStatus("error");
+          setMessage(d.error || "Unexpected response.");
+        }
       })
       .catch(() => { setStatus("error"); setMessage("Connection error. Please show this QR code to the registration desk."); });
   }, [parentName]);
 
   const CFG = {
-    loading:  { icon: "○", color: "#888899", label: "Checking…" },
-    success:  { icon: "✓", color: "#22c55e", label: "Entry Approved" },
-    inactive: { icon: "⚠", color: "#f59e0b", label: "Already Used" },
-    error:    { icon: "✕", color: "#ef4444", label: "Invalid QR Code" },
+    loading:  { icon: "○", color: "#888899", label: "Checking…"          },
+    success:  { icon: "✓", color: "#22c55e", label: "Entry Approved"     },
+    test:     { icon: "⚡", color: "#06b6d4", label: "Test Scan"          },
+    rescan:   { icon: "↻", color: "#6366f1", label: "Re-entry Verified"  },
+    inactive: { icon: "⚠", color: "#f59e0b", label: "Already Used"       },
+    error:    { icon: "✕", color: "#ef4444", label: "Invalid QR Code"    },
   };
   const cfg = CFG[status] || CFG.error;
 
@@ -60,21 +92,30 @@ function ScanPage({ parentName }) {
       <p style={{ fontSize: 11, fontWeight: 600, letterSpacing: "0.15em", textTransform: "uppercase", color: "#555566", marginBottom: 12 }}>LCC Graduation Ceremony</p>
       <h1 style={{ fontSize: 28, color: "#f0f0f8", marginBottom: 14, lineHeight: 1.2 }}>{cfg.label}</h1>
       <p style={{ fontSize: 15, color: "#888899", lineHeight: 1.6, marginBottom: 32 }}>{message}</p>
-      {(status === "success" || status === "inactive") && (
+      {(status === "success" || status === "test" || status === "rescan" || status === "inactive") && (
         <div style={{ background: "#12121a", border: "1px solid #22222e", borderRadius: 12, padding: 20, textAlign: "left" }}>
           <div style={{ display: "flex", justifyContent: "space-between", padding: "8px 0" }}>
             <span style={{ fontSize: 12, fontWeight: 600, textTransform: "uppercase", color: "#44445a" }}>Guest</span>
             <span style={{ fontSize: 14, color: "#c8c8de" }}>{parentName}</span>
           </div>
-          {status === "inactive" && scannedAt && (
+          {(status === "inactive" || status === "rescan") && scannedAt && (
             <div style={{ display: "flex", justifyContent: "space-between", padding: "8px 0", borderTop: "1px solid #1e1e28" }}>
-              <span style={{ fontSize: 12, fontWeight: 600, textTransform: "uppercase", color: "#44445a" }}>First scanned</span>
+              <span style={{ fontSize: 12, fontWeight: 600, textTransform: "uppercase", color: "#44445a" }}>
+                {status === "rescan" ? "Checked in at" : "First scanned"}
+              </span>
               <span style={{ fontSize: 14, color: "#c8c8de" }}>{fmt(scannedAt)}</span>
             </div>
           )}
         </div>
       )}
-      <p style={{ marginTop: 28, fontSize: 12, color: "#33334a" }}>{fmt(new Date().toISOString())}</p>
+      {EVENT_DATE && (
+        <p style={{ marginTop: 12, fontSize: 12, color: "#33334a" }}>
+          {isBeforeEventDate()
+            ? `QR valid for multiple entries until ${new Date(EVENT_DATE + "T00:00:00+08:00").toLocaleDateString("en-PH", { month: "long", day: "numeric", year: "numeric" })}`
+            : "One-time use enforced — event has passed"}
+        </p>
+      )}
+      <p style={{ marginTop: 8, fontSize: 12, color: "#33334a" }}>{fmt(new Date().toISOString())}</p>
     </Card>
   );
 }
@@ -115,7 +156,16 @@ function LoginPage({ onStudentLogin, onAdminLogin }) {
       const data = await res.json();
       if (!res.ok) { shake("Server error. Please try again."); return; }
       if (!data.exists) { shake("Student number not found. Please check your number."); return; }
-      onStudentLogin({ studentNumber: input, studentName: data.student_name || "", course: data.course || "" });
+      onStudentLogin({
+        studentNumber:   input,
+        studentName:     data.student_name    || "",
+        course:          data.course          || "",
+        email:           data.email           || "",
+        contactNumber:   data.contact_number  || "",
+        parent1:         data.parent1_name    || "",
+        parent2:         data.parent2_name    || "",
+        hasRegistration: !!(data.has_registration),
+      });
     } catch {
       shake("Connection error. Please try again.");
     } finally {
@@ -210,6 +260,7 @@ function LoginPage({ onStudentLogin, onAdminLogin }) {
 // ─────────────────────────────────────────────────────────────────────────────
 function AdminPage({ onLogout }) {
   const [tab, setTab]                 = useState("registrations"); // "registrations" | "import"
+  const [eventDate, setEventDate]     = useState(EVENT_DATE || null);
   const [filter, setFilter]           = useState("all");
   const [rows, setRows]               = useState([]);
   const [counts, setCounts]           = useState({ all: 0, scanned: 0, unscanned: 0 });
@@ -233,6 +284,14 @@ function AdminPage({ onLogout }) {
     s.src = "https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js";
     s.async = true;
     document.head.appendChild(s);
+  }, []);
+
+  // Fetch event date from backend (backend env var takes precedence over frontend)
+  useEffect(() => {
+    fetch(`${API_BASE_URL}/api/event-date`)
+      .then(r => r.json())
+      .then(d => { if (d.eventDate) setEventDate(d.eventDate); })
+      .catch(() => {});
   }, []);
 
   const fetchData = useCallback(async () => {
@@ -298,7 +357,7 @@ function AdminPage({ onLogout }) {
     if (!XLSX) { alert("Excel export is still loading, please try again."); return; }
     const ws = XLSX.utils.json_to_sheet(visible.map(r => ({
       "Student Name": r.student_name || "", "Student Number": r.student_number || "",
-      "Course": r.course || "", "Email": r.email || "", "Contact Number": r.contact_number || "",
+      "Department": r.course || "", "Email": r.email || "", "Contact Number": r.contact_number || "",
       "Parent Name": r.parent_name || "", "Slot": r.parent_slot || "",
       "Status": r.scanned ? "Scanned" : "Not Yet Scanned",
       "Scanned At": r.scanned ? fmt(r.scanned_at) : "", "Registered At": fmt(r.registered_at),
@@ -379,7 +438,7 @@ function AdminPage({ onLogout }) {
     { key: "unscanned", label: "Not Yet Scanned",  count: counts.unscanned },
     { key: "scanned",   label: "Already Scanned",  count: counts.scanned   },
   ];
-  const COLS = ["Student Name","Student No.","Course","Parent Name","Slot","Status","Scanned At","Registered At","Action"];
+  const COLS = ["Student Name","Student No.","Department","Parent Name","Slot","Status","Scanned At","Registered At","Action"];
 
   return (
     <div className="reg-page">
@@ -387,7 +446,19 @@ function AdminPage({ onLogout }) {
 
         {/* Header */}
         <div className="reg-header">
-          <h1 className="reg-title">🎓 Admin — LCC Graduation</h1>
+          <div>
+            <h1 className="reg-title" style={{ marginBottom: 4 }}>🎓 Admin — LCC Graduation</h1>
+            {eventDate && (
+              <p style={{ margin: 0, fontSize: 13, color: isBeforeEventDate() ? "#22c55e" : "#f59e0b" }}>
+                {isBeforeEventDate()
+                  ? `📅 Event on ${new Date(eventDate + "T00:00:00+08:00").toLocaleDateString("en-PH", { month: "long", day: "numeric", year: "numeric" })} — unlimited scanning active`
+                  : `📅 Event on ${new Date(eventDate + "T00:00:00+08:00").toLocaleDateString("en-PH", { month: "long", day: "numeric", year: "numeric" })} — one-time use enforced`}
+              </p>
+            )}
+            {!eventDate && (
+              <p style={{ margin: 0, fontSize: 13, color: "#555566" }}>No event date set — unlimited scanning always active</p>
+            )}
+          </div>
           <button className="reg-back-btn" onClick={onLogout}>Logout</button>
         </div>
 
@@ -412,7 +483,7 @@ function AdminPage({ onLogout }) {
               ))}
             </div>
             <div className="reg-toolbar">
-              <input className="reg-search" placeholder="Search by student, parent, course…" value={search} onChange={e => setSearch(e.target.value)} />
+              <input className="reg-search" placeholder="Search by student, parent, department…" value={search} onChange={e => setSearch(e.target.value)} />
               <button className="reg-refresh-btn" onClick={fetchData} disabled={loading}>{loading ? "…" : "↻ Refresh"}</button>
               <button className="reg-export-btn" onClick={exportToExcel} disabled={visible.length === 0}>↓ Export to Excel ({visible.length})</button>
             </div>
@@ -568,19 +639,22 @@ function AdminPage({ onLogout }) {
   );
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// StudentPage — registration form + QR display + edit existing registration
+// ─────────────────────────────────────────────────────────────────────────────
 function StudentPage({ studentInfo, onLogout }) {
   const initialStudentNumber = studentInfo?.studentNumber || "";
   const hasRegistration      = studentInfo?.hasRegistration || false;
 
   // ── view | "form" (new registration) | "edit" (editing existing) | "qr" ──
-  const [mode, setMode]                 = useState("form");
-  const [studentName, setStudentName]   = useState(studentInfo?.studentName    || "");
+  const [mode, setMode]                 = useState(hasRegistration ? "view" : "form");
+  const [studentName]                   = useState(studentInfo?.studentName    || "");
   const [studentNumber]                 = useState(initialStudentNumber);
-  const [course, setCourse]             = useState(studentInfo?.course         || "");
-  const [email, setEmail]               = useState("");
-  const [contactNumber, setContactNumber] = useState("");
-  const [parent1, setParent1]           = useState("");
-  const [parent2, setParent2]           = useState("");
+  const [course]                        = useState(studentInfo?.course         || "");
+  const [email, setEmail]               = useState(studentInfo?.email          || "");
+  const [contactNumber, setContactNumber] = useState(studentInfo?.contactNumber || "");
+  const [parent1, setParent1]           = useState(studentInfo?.parent1        || "");
+  const [parent2, setParent2]           = useState(studentInfo?.parent2        || "");
   const [loading, setLoading]           = useState(false);
   const [emailSent, setEmailSent]       = useState(false);
   const [isApiConnected, setIsApiConnected] = useState(false);
@@ -588,23 +662,15 @@ function StudentPage({ studentInfo, onLogout }) {
   const [parent2Scanned, setParent2Scanned]     = useState(false);
   const [parent1ScannedAt, setParent1ScannedAt] = useState(null);
   const [parent2ScannedAt, setParent2ScannedAt] = useState(null);
-  const [isEditing, setIsEditing] = useState(false);
-  const [dataLoaded, setDataLoaded] = useState(false);
-  const [originalData, setOriginalData] = useState({});
-  const [showUpdatePrompt, setShowUpdatePrompt] = useState(false);
-  const [registrationExists, setRegistrationExists] = useState(false);
 
-  // Edit mode — working copies
-  const [editParent1, setEditParent1] = useState("");
-  const [editParent2, setEditParent2] = useState("");
-  const [editEmail, setEditEmail]     = useState("");
-  const [editContact, setEditContact] = useState("");
+  // Edit mode — working copies so cancel restores originals
+  const [editParent1, setEditParent1] = useState(studentInfo?.parent1 || "");
+  const [editParent2, setEditParent2] = useState(studentInfo?.parent2 || "");
+  const [editEmail, setEditEmail]     = useState(studentInfo?.email   || "");
+  const [editContact, setEditContact] = useState(studentInfo?.contactNumber || "");
 
   const qrValueParent1 = `${API_BASE_URL}/scan?parent=${encodeURIComponent(parent1)}`;
   const qrValueParent2 = parent2 ? `${API_BASE_URL}/scan?parent=${encodeURIComponent(parent2)}` : null;
-
-  // Helper function for formatting dates
-  const fmt = (d) => d ? new Date(d).toLocaleString() : "";
 
   useEffect(() => {
     fetch(`${API_BASE_URL}/api/health`)
@@ -613,111 +679,26 @@ function StudentPage({ studentInfo, onLogout }) {
       .catch(() => setIsApiConnected(false));
   }, []);
 
-  // Fetch ALL registration data on login
-  useEffect(() => {
-    const fetchRegistrationData = async () => {
-      if (!studentNumber) {
-        console.log('No student number available');
-        setDataLoaded(true);
-        return;
-      }
-      
-      console.log('Fetching registration data for:', studentNumber);
-      
-      try {
-        const res = await fetch(`${API_BASE_URL}/api/check-student-number`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ studentNumber }),
-        });
-        
-        const data = await res.json();
-        console.log('Received data:', data);
-        
-        if (data.exists) {
-          setRegistrationExists(true);
-          console.log('Parent1 from DB:', data.parent1_name);
-          console.log('Parent2 from DB:', data.parent2_name);
-          
-          // Populate ALL fields from database
-          setStudentName(data.student_name || "");
-          setCourse(data.course || "");
-          setEmail(data.email || "");
-          setContactNumber(data.contact_number || "");
-          setParent1(data.parent1_name || "");
-          setParent2(data.parent2_name || "");
-          setParent1Scanned(data.parent1_scanned || false);
-          setParent2Scanned(data.parent2_scanned || false);
-          
-          // Store original data for comparison
-          setOriginalData({
-            email: data.email || "",
-            contact_number: data.contact_number || "",
-            parent1_name: data.parent1_name || "",
-            parent2_name: data.parent2_name || ""
-          });
-          
-          // Set edit copies
-          setEditParent1(data.parent1_name || "");
-          setEditParent2(data.parent2_name || "");
-          setEditEmail(data.email || "");
-          setEditContact(data.contact_number || "");
-          
-          // If parent names exist, show update prompt
-          if (data.parent1_name) {
-            console.log('Parent names detected, showing update prompt');
-            setShowUpdatePrompt(true);
-          } else {
-            setMode("form");
-          }
-        } else {
-          console.log('No existing registration found');
-          setRegistrationExists(false);
-          setMode("form");
-        }
-        setDataLoaded(true);
-      } catch (err) {
-        console.error("Error fetching registration data:", err);
-        setDataLoaded(true);
-      }
-    };
-
-    if (!dataLoaded) {
-      fetchRegistrationData();
-    }
-  }, [studentNumber, dataLoaded]);
-
   // Poll QR scan status in view/qr mode
   useEffect(() => {
     if (mode !== "view" && mode !== "qr") return;
     if (!parent1) return;
-    
     const check = async () => {
       try {
         const r1 = await fetch(`${API_BASE_URL}/api/check-qr-status`, {
           method: "POST", headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ parentName: parent1 }),
         });
-        if (r1.ok) { 
-          const d = await r1.json(); 
-          setParent1Scanned(d.scanned); 
-          setParent1ScannedAt(d.scannedAt); 
-        }
-        
+        if (r1.ok) { const d = await r1.json(); setParent1Scanned(d.scanned); setParent1ScannedAt(d.scannedAt); }
         if (parent2) {
           const r2 = await fetch(`${API_BASE_URL}/api/check-qr-status`, {
             method: "POST", headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ parentName: parent2 }),
           });
-          if (r2.ok) { 
-            const d = await r2.json(); 
-            setParent2Scanned(d.scanned); 
-            setParent2ScannedAt(d.scannedAt); 
-          }
+          if (r2.ok) { const d = await r2.json(); setParent2Scanned(d.scanned); setParent2ScannedAt(d.scannedAt); }
         }
       } catch (e) { console.error("QR scan check error:", e); }
     };
-    
     check();
     const id = setInterval(check, 5000);
     return () => clearInterval(id);
@@ -733,58 +714,21 @@ function StudentPage({ studentInfo, onLogout }) {
       const qr2 = qrValueParent2 ? await QRCodeLib.toDataURL(qrValueParent2) : null;
       const saveRes = await fetch(`${API_BASE_URL}/api/save-registration`, {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ 
-          studentName, studentNumber, course, email, contactNumber, 
-          parent1, parent2, qrCodeParent1: qr1, qrCodeParent2: qr2 
-        }),
+        body: JSON.stringify({ studentName, studentNumber, course, email, contactNumber, parent1, parent2, qrCodeParent1: qr1, qrCodeParent2: qr2 }),
       });
       const saveData = await saveRes.json();
+      if (saveRes.status === 409 || saveData.duplicate) { alert("This student number is already registered."); return; }
       if (!saveRes.ok) throw new Error(saveData.error || "Failed to save.");
-      
-      // Show different message based on whether it was an update or first-time registration
-      if (saveData.isUpdate) {
-        alert("Your registration has been updated successfully!");
-      } else {
-        alert("Your registration has been saved successfully!");
-      }
-      
-      // Update the original data after successful save
-      setOriginalData({
-        email: email,
-        contact_number: contactNumber,
-        parent1_name: parent1,
-        parent2_name: parent2
-      });
-      
       setMode("qr");
     } catch (err) { alert("Registration failed: " + err.message); }
     finally { setLoading(false); }
   };
 
-  // ── Check if any data has been modified ──────────────────────────────────
-  const hasChanges = () => {
-    return (
-      editEmail !== originalData.email ||
-      editContact !== originalData.contact_number ||
-      editParent1 !== originalData.parent1_name ||
-      editParent2 !== originalData.parent2_name
-    );
-  };
-
-  // ── Edit save — update all editable fields ──────────────────────────────────
+  // ── Edit save — delete old + insert new ──────────────────────────────────
   const handleEditSave = async (e) => {
     e.preventDefault();
     if (!editParent1.trim()) { alert("Parent 1 name is required."); return; }
-    if (!editEmail.trim()) { alert("Email is required."); return; }
-    if (!editContact.trim()) { alert("Contact number is required."); return; }
-    
-    if (!hasChanges()) {
-      alert("No changes detected. Please modify at least one field.");
-      return;
-    }
-    
-    if (!window.confirm("Update your information? New QR codes will be generated.")) return;
-    
+    if (!window.confirm("This will delete the old QR codes and generate new ones.\n\nContinue?")) return;
     setLoading(true);
     try {
       const newQrVal1 = `${API_BASE_URL}/scan?parent=${encodeURIComponent(editParent1)}`;
@@ -796,10 +740,10 @@ function StudentPage({ studentInfo, onLogout }) {
         method: "PUT", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           studentNumber,
-          email: editEmail,
+          email:         editEmail,
           contactNumber: editContact,
-          parent1: editParent1,
-          parent2: editParent2,
+          parent1:       editParent1,
+          parent2:       editParent2,
           qrCodeParent1: qr1,
           qrCodeParent2: qr2,
         }),
@@ -812,24 +756,10 @@ function StudentPage({ studentInfo, onLogout }) {
       setParent2(editParent2);
       setEmail(editEmail);
       setContactNumber(editContact);
-      
-      // Update original data
-      setOriginalData({
-        email: editEmail,
-        contact_number: editContact,
-        parent1_name: editParent1,
-        parent2_name: editParent2
-      });
-      
-      setParent1Scanned(false); 
-      setParent1ScannedAt(null);
-      setParent2Scanned(false); 
-      setParent2ScannedAt(null);
+      setParent1Scanned(false); setParent1ScannedAt(null);
+      setParent2Scanned(false); setParent2ScannedAt(null);
       setEmailSent(false);
-      setIsEditing(false);
       setMode("qr");
-      
-      alert("Your information has been updated successfully!");
     } catch (err) { alert("Update failed: " + err.message); }
     finally { setLoading(false); }
   };
@@ -852,170 +782,45 @@ function StudentPage({ studentInfo, onLogout }) {
     finally { setLoading(false); }
   };
 
-  // ── Cancel edit and restore original values ──────────────────────────────
-  const handleCancelEdit = () => {
-    setEditParent1(originalData.parent1_name);
-    setEditParent2(originalData.parent2_name);
-    setEditEmail(originalData.email);
-    setEditContact(originalData.contact_number);
-    setIsEditing(false);
-  };
-
-  // ── Go back to summary (view mode) ───────────────────────────────────────
-  const handleBackToSummary = () => {
-    setMode("view");
-    setIsEditing(false);
-  };
-
-  // ── Handle update prompt choices ─────────────────────────────────────────
-  const handleViewOnly = () => {
-    setShowUpdatePrompt(false);
-    setMode("view");
-  };
-
-  const handleUpdateInfo = () => {
-    setShowUpdatePrompt(false);
-    setIsEditing(true);
-    setMode("view");
-  };
-
   // ── Shared locked field style ─────────────────────────────────────────────
-  const lockedStyle = { background: "#12121a", color: "#555566", cursor: "not-allowed", borderColor: "#1e1e28" };
+  const lockedStyle = { background: "#9595a3", color: "#000000", cursor: "not-allowed", borderColor: "#1e1e28" };
 
-  // Show loading while fetching data
-  if (!dataLoaded) {
-    return (
-      <div className="app-container">
-        <div className="form-card">
-          <p>Loading your registration data...</p>
-        </div>
-      </div>
-    );
-  }
-
-  // Show update prompt if parent names exist
-  if (showUpdatePrompt) {
-    return (
-      <div className="app-container">
-        <div className="form-card">
-          <div style={{ textAlign: "center" }}>
-            <h1 className="form-title" style={{ marginBottom: 20 }}>Welcome Back, {studentName}!</h1>
-            <p className="form-description" style={{ marginBottom: 30 }}>
-              You have already registered for the graduation ceremony.
-            </p>
-            
-            <div style={{ background: "#12121a", border: "1px solid #1e1e28", borderRadius: 12, padding: 20, marginBottom: 20, textAlign: "left" }}>
-              <p style={{ fontSize: 11, fontWeight: 600, letterSpacing: "0.1em", textTransform: "uppercase", color: "#555566", marginBottom: 12 }}>Your Current Registration</p>
-              <div style={{ display: "flex", justifyContent: "space-between", padding: "7px 0", borderBottom: "1px solid #1a1a22" }}>
-                <span style={{ fontSize: 13, color: "#555566" }}>Student Name</span>
-                <span style={{ fontSize: 13, color: "#c8c8de", fontWeight: 500 }}>{studentName}</span>
-              </div>
-              <div style={{ display: "flex", justifyContent: "space-between", padding: "7px 0", borderBottom: "1px solid #1a1a22" }}>
-                <span style={{ fontSize: 13, color: "#555566" }}>Student Number</span>
-                <span style={{ fontSize: 13, color: "#c8c8de", fontWeight: 500 }}>{studentNumber}</span>
-              </div>
-              <div style={{ display: "flex", justifyContent: "space-between", padding: "7px 0", borderBottom: "1px solid #1a1a22" }}>
-                <span style={{ fontSize: 13, color: "#555566" }}>Course</span>
-                <span style={{ fontSize: 13, color: "#c8c8de", fontWeight: 500 }}>{course}</span>
-              </div>
-              <div style={{ display: "flex", justifyContent: "space-between", padding: "7px 0", borderBottom: "1px solid #1a1a22" }}>
-                <span style={{ fontSize: 13, color: "#555566" }}>Email</span>
-                <span style={{ fontSize: 13, color: "#c8c8de", fontWeight: 500 }}>{email}</span>
-              </div>
-              <div style={{ display: "flex", justifyContent: "space-between", padding: "7px 0", borderBottom: "1px solid #1a1a22" }}>
-                <span style={{ fontSize: 13, color: "#555566" }}>Contact Number</span>
-                <span style={{ fontSize: 13, color: "#c8c8de", fontWeight: 500 }}>{contactNumber}</span>
-              </div>
-              <div style={{ display: "flex", justifyContent: "space-between", padding: "7px 0", borderBottom: "1px solid #1a1a22" }}>
-                <span style={{ fontSize: 13, color: "#555566" }}>Parent 1</span>
-                <span style={{ fontSize: 13, color: "#c8c8de", fontWeight: 500 }}>{parent1}</span>
-              </div>
-              <div style={{ display: "flex", justifyContent: "space-between", padding: "7px 0" }}>
-                <span style={{ fontSize: 13, color: "#555566" }}>Parent 2</span>
-                <span style={{ fontSize: 13, color: "#c8c8de", fontWeight: 500 }}>{parent2 || "Not provided"}</span>
-              </div>
-            </div>
-            
-            <p className="form-description" style={{ marginBottom: 20 }}>
-              What would you like to do?
-            </p>
-            
-            <div style={{ display: "flex", gap: 10, flexDirection: "column" }}>
-              <button 
-                onClick={handleUpdateInfo}
-                style={{ background: "#f59e0b", color: "#111", border: "none", borderRadius: 8, padding: "12px 0", fontSize: 14, fontWeight: 700, cursor: "pointer" }}
-              >
-                ✏️ Update My Information
-              </button>
-              <button 
-                onClick={handleViewOnly}
-                style={{ background: "#6366f1", color: "#fff", border: "none", borderRadius: 8, padding: "12px 0", fontSize: 14, fontWeight: 600, cursor: "pointer" }}
-              >
-                👁️ View My QR Codes
-              </button>
-              <button 
-                onClick={onLogout}
-                style={{ background: "transparent", border: "1px solid #2a2a35", color: "#888899", borderRadius: 8, padding: "12px 0", fontSize: 14, cursor: "pointer" }}
-              >
-                🚪 Logout
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
+  // ── Render ────────────────────────────────────────────────────────────────
   return (
     <div className="app-container">
       <div className="form-card">
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12, marginBottom: 4 }}>
-          <h1 className="form-title" style={{ margin: 0 }}>LCC Graduation Reservation</h1>
-          <button onClick={onLogout} style={{ background: "transparent", border: "1px solid #2a2a35", color: "#888899", borderRadius: 8, padding: "8px 16px", cursor: "pointer", fontSize: 13 }}>Logout</button>
+          <h1 className="form-title" style={{ margin: 0 }}>LCC 79th Commencement Exercises 2026</h1>
+          <button onClick={onLogout} style={{ background: "#ff0000", border: "1px solid #2a2a35", color: "#000000", borderRadius: 8, padding: "8px 16px", cursor: "pointer", fontSize: 13 }}>Logout</button>
         </div>
 
         {!isApiConnected && <div className="warning-message">⚠️ Connecting to server… Please wait.</div>}
 
         {/* ── VIEW mode: existing registration summary ── */}
-        {mode === "view" && !isEditing && (
+        {mode === "view" && (
           <div>
-            <p className="form-description">Your registration details are shown below.</p>
+            <p className="form-description">You have already registered. Review your details below.</p>
 
             {/* Student info block */}
-            <div style={{ background: "#12121a", border: "1px solid #1e1e28", borderRadius: 12, padding: 20, marginBottom: 20 }}>
-              <p style={{ fontSize: 11, fontWeight: 600, letterSpacing: "0.1em", textTransform: "uppercase", color: "#555566", marginBottom: 12 }}>Student Information</p>
-              {[["Name", studentName], ["Student Number", studentNumber], ["Course", course]].map(([label, val]) => (
+            <div style={{ background: "#ffffff", border: "1px solid #1e1e28", borderRadius: 12, padding: 20, marginBottom: 20 }}>
+              <p style={{ fontSize: 11, fontWeight: 600, letterSpacing: "0.1em", textTransform: "uppercase", color: "#000000", marginBottom: 12 }}>Student Information</p>
+              {[["Name", studentName], ["Student Number", studentNumber], ["Department", course], ["Email", email || "—"], ["Contact", contactNumber || "—"]].map(([label, val]) => (
                 <div key={label} style={{ display: "flex", justifyContent: "space-between", padding: "7px 0", borderBottom: "1px solid #1a1a22" }}>
-                  <span style={{ fontSize: 13, color: "#555566" }}>{label}</span>
-                  <span style={{ fontSize: 13, color: "#c8c8de", fontWeight: 500 }}>{val || "—"}</span>
-                </div>
-              ))}
-            </div>
-
-            {/* Contact Info Block */}
-            <div style={{ background: "#12121a", border: "1px solid #1e1e28", borderRadius: 12, padding: 20, marginBottom: 20 }}>
-              <p style={{ fontSize: 11, fontWeight: 600, letterSpacing: "0.1em", textTransform: "uppercase", color: "#555566", marginBottom: 12 }}>Contact Information</p>
-              {[["Email", email || "—"], ["Contact Number", contactNumber || "—"]].map(([label, val]) => (
-                <div key={label} style={{ display: "flex", justifyContent: "space-between", padding: "7px 0", borderBottom: "1px solid #1a1a22" }}>
-                  <span style={{ fontSize: 13, color: "#555566" }}>{label}</span>
-                  <span style={{ fontSize: 13, color: val === "—" ? "#333344" : "#c8c8de", fontWeight: 500 }}>{val}</span>
+                  <span style={{ fontSize: 13, color: "#000000" }}>{label}</span>
+                  <span style={{ fontSize: 13, color: "#000000", fontWeight: 500 }}>{val}</span>
                 </div>
               ))}
             </div>
 
             {/* Parent info block */}
-            <div style={{ background: "#12121a", border: "1px solid #1e1e28", borderRadius: 12, padding: 20, marginBottom: 20 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-                <p style={{ fontSize: 11, fontWeight: 600, letterSpacing: "0.1em", textTransform: "uppercase", color: "#555566", margin: 0 }}>Registered Parents / Guardians</p>
-              </div>
+            <div style={{ background: "#ffffff", border: "1px solid #1e1e28", borderRadius: 12, padding: 20, marginBottom: 20 }}>
+              <p style={{ fontSize: 11, fontWeight: 600, letterSpacing: "0.1em", textTransform: "uppercase", color: "#000000", marginBottom: 12 }}>Registered Parents / Guardians</p>
               {[["Parent 1", parent1], ["Parent 2", parent2 || "—"]].map(([label, val]) => (
                 <div key={label} style={{ display: "flex", justifyContent: "space-between", padding: "7px 0", borderBottom: "1px solid #1a1a22" }}>
-                  <span style={{ fontSize: 13, color: "#555566" }}>{label}</span>
-                  <span style={{ fontSize: 13, color: val === "—" ? "#333344" : "#c8c8de", fontWeight: 500 }}>{val}</span>
+                  <span style={{ fontSize: 13, color: "#000000" }}>{label}</span>
+                  <span style={{ fontSize: 13, color: val === "—" ? "#000000" : "#000000", fontWeight: 500 }}>{val}</span>
                 </div>
               ))}
-              {parent1Scanned && <div style={{ marginTop: 10, fontSize: 12, color: "#22c55e" }}>✓ Parent 1 has been scanned</div>}
-              {parent2Scanned && <div style={{ marginTop: 5, fontSize: 12, color: "#22c55e" }}>✓ Parent 2 has been scanned</div>}
             </div>
 
             <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
@@ -1023,21 +828,21 @@ function StudentPage({ studentInfo, onLogout }) {
                 style={{ flex: 1, background: "#6366f1", color: "#fff", border: "none", borderRadius: 8, padding: "11px 0", fontSize: 14, fontWeight: 600, cursor: "pointer" }}>
                 View QR Codes
               </button>
-              <button onClick={() => setIsEditing(true)}
-                style={{ flex: 1, background: "transparent", color: "#f59e0b", border: "1px solid rgba(245,158,11,0.4)", borderRadius: 8, padding: "11px 0", fontSize: 14, fontWeight: 600, cursor: "pointer" }}>
-                ✏️ Edit Information
+              <button onClick={() => { setEditParent1(parent1); setEditParent2(parent2); setEditEmail(email); setEditContact(contactNumber); setMode("edit"); }}
+                style={{ flex: 1, background: "#1ac825", color: "#000000", border: "1px solid rgba(0, 0, 0, 0.4)", borderRadius: 8, padding: "11px 0", fontSize: 14, fontWeight: 600, cursor: "pointer" }}>
+                ✏️ Edit Parents
               </button>
             </div>
           </div>
         )}
 
-        {/* ── EDIT mode inline ── */}
-        {isEditing && (
+        {/* ── EDIT mode ── */}
+        {mode === "edit" && (
           <div>
-            <p className="form-description">Edit your registration information. New QR codes will be generated.</p>
-            
-            <div style={{ background: "rgba(245,158,11,0.06)", border: "1px solid rgba(245,158,11,0.2)", borderRadius: 10, padding: "12px 16px", marginBottom: 20, fontSize: 13, color: "#f59e0b" }}>
-              ⚠️ Editing will generate new QR codes. Previously shared QR codes will no longer work.
+            <p className="form-description">Update your parent/guardian details. New QR codes will be generated and old ones will be invalidated.</p>
+
+            <div style={{ background: "#ffffff", border: "1px solid rgba(245,158,11,0.2)", borderRadius: 10, padding: "12px 16px", marginBottom: 20, fontSize: 13, color: "#f59e0b" }}>
+              ⚠️ Editing will delete the current QR codes. Make sure any previously shared QR codes are discarded.
             </div>
 
             <form onSubmit={handleEditSave} className="form">
@@ -1047,60 +852,29 @@ function StudentPage({ studentInfo, onLogout }) {
               <label className="form-label">Student Number</label>
               <input type="text" value={studentNumber || "—"} readOnly className="form-input" style={lockedStyle} tabIndex={-1} />
 
-              <label className="form-label">Course</label>
+              <label className="form-label">Department</label>
               <input type="text" value={course || "—"} readOnly className="form-input" style={lockedStyle} tabIndex={-1} />
 
               <label className="form-label">Email <span className="required-asterisk">*</span></label>
-              <input 
-                type="email" 
-                placeholder="your.email@example.com" 
-                value={editEmail} 
-                onChange={e => setEditEmail(e.target.value)} 
-                className="form-input" 
-                required 
-              />
+              <input type="email" placeholder="your.email@example.com" value={editEmail} onChange={e => setEditEmail(e.target.value)} className="form-input" required />
 
               <label className="form-label">Contact Number <span className="required-asterisk">*</span></label>
-              <input 
-                type="tel" 
-                placeholder="09123456789" 
-                value={editContact} 
-                onChange={e => setEditContact(e.target.value.replace(/[^0-9]/g, ""))} 
-                className="form-input" 
-                required 
-              />
+              <input type="tel" placeholder="09123456789" value={editContact} onChange={e => setEditContact(e.target.value.replace(/[^0-9]/g, ""))} className="form-input" required />
 
               <label className="form-label">Parent 1 Name <span className="required-asterisk">*</span></label>
-              <input 
-                type="text" 
-                placeholder="Parent/Guardian 1 full name" 
-                value={editParent1} 
-                onChange={e => setEditParent1(e.target.value)} 
-                className="form-input" 
-                required 
-              />
+              <input type="text" placeholder="Parent/Guardian 1 full name" value={editParent1} onChange={e => setEditParent1(e.target.value)} className="form-input" required />
 
               <label className="form-label">Parent 2 Name (Optional)</label>
-              <input 
-                type="text" 
-                placeholder="Parent/Guardian 2 full name" 
-                value={editParent2} 
-                onChange={e => setEditParent2(e.target.value)} 
-                className="form-input" 
-              />
+              <input type="text" placeholder="Parent/Guardian 2 full name" value={editParent2} onChange={e => setEditParent2(e.target.value)} className="form-input" />
 
               <div style={{ display: "flex", gap: 10, marginTop: 8 }}>
-                <button type="button" onClick={handleCancelEdit}
+                <button type="button" onClick={() => setMode("view")}
                   style={{ flex: 1, background: "transparent", border: "1px solid #2a2a35", color: "#888899", borderRadius: 8, padding: "11px 0", fontSize: 14, cursor: "pointer" }}>
                   Cancel
                 </button>
-                <button 
-                  type="submit" 
-                  disabled={loading || !editParent1.trim() || !editEmail.trim() || !editContact.trim() || !hasChanges()}
-                  style={{ flex: 2, background: "#f59e0b", color: "#111", border: "none", borderRadius: 8, padding: "11px 0", fontSize: 14, fontWeight: 700, 
-                    cursor: (!loading && editParent1.trim() && editEmail.trim() && editContact.trim() && hasChanges()) ? "pointer" : "not-allowed", 
-                    opacity: (!loading && editParent1.trim() && editEmail.trim() && editContact.trim() && hasChanges()) ? 1 : 0.5 }}>
-                  {loading ? "Saving…" : "Save Changes & Generate New QR Codes"}
+                <button type="submit" disabled={loading || !editParent1.trim()}
+                  style={{ flex: 2, background: "#0bf52a", color: "#111", border: "none", borderRadius: 8, padding: "11px 0", fontSize: 14, fontWeight: 700, cursor: (!loading && editParent1.trim()) ? "pointer" : "not-allowed", opacity: (!loading && editParent1.trim()) ? 1 : 0.5 }}>
+                  {loading ? "Saving…" : "Save & Regenerate QR Codes"}
                 </button>
               </div>
             </form>
@@ -1121,7 +895,7 @@ function StudentPage({ studentInfo, onLogout }) {
               <label className="form-label">Student Number</label>
               <input type="text" value={studentNumber || "—"} readOnly className="form-input" style={lockedStyle} tabIndex={-1} />
 
-              <label className="form-label">Course</label>
+              <label className="form-label">Department</label>
               <input type="text" value={course || "—"} readOnly className="form-input" style={lockedStyle} tabIndex={-1} />
 
               <label className="form-label">Email <span className="required-asterisk">*</span></label>
@@ -1148,19 +922,19 @@ function StudentPage({ studentInfo, onLogout }) {
           <div className="qr-section">
             <p className="qr-title">Reservation QR Code{parent2 ? "s" : ""}</p>
             <div className="qr-container">
-              <div className={`qr-item${parent1Scanned ? " scanned" : ""}`}>
+              <div className={`qr-item${parent1Scanned && !isBeforeEventDate() ? " scanned" : ""}`}>
                 {parent2 && <p className="qr-parent-label">{parent1}</p>}
                 <div className="qr-wrapper">
                   <QRCode value={qrValueParent1} size={200} />
-                  {parent1Scanned && <div className="qr-overlay"><div className="qr-status"><span className="scan-badge">✓ SCANNED</span><p className="scan-time">{parent1ScannedAt ? fmt(parent1ScannedAt) : ""}</p></div></div>}
+                  {parent1Scanned && !isBeforeEventDate() && <div className="qr-overlay"><div className="qr-status"><span className="scan-badge">✓ SCANNED</span><p className="scan-time">{parent1ScannedAt ? fmt(parent1ScannedAt) : ""}</p></div></div>}
                 </div>
               </div>
               {parent2 && qrValueParent2 && (
-                <div className={`qr-item${parent2Scanned ? " scanned" : ""}`}>
+                <div className={`qr-item${parent2Scanned && !isBeforeEventDate() ? " scanned" : ""}`}>
                   <p className="qr-parent-label">{parent2}</p>
                   <div className="qr-wrapper">
                     <QRCode value={qrValueParent2} size={200} />
-                    {parent2Scanned && <div className="qr-overlay"><div className="qr-status"><span className="scan-badge">✓ SCANNED</span><p className="scan-time">{parent2ScannedAt ? fmt(parent2ScannedAt) : ""}</p></div></div>}
+                    {parent2Scanned && !isBeforeEventDate() && <div className="qr-overlay"><div className="qr-status"><span className="scan-badge">✓ SCANNED</span><p className="scan-time">{parent2ScannedAt ? fmt(parent2ScannedAt) : ""}</p></div></div>}
                   </div>
                 </div>
               )}
@@ -1169,7 +943,7 @@ function StudentPage({ studentInfo, onLogout }) {
             {emailSent ? <p className="email-sent-message">✓ QR codes sent to {email}</p> : (
               <button onClick={handleSendEmail} disabled={loading} className="send-email-btn">{loading ? "Sending…" : "Send QR Codes to Email"}</button>
             )}
-            <button onClick={handleBackToSummary} className="back-btn">← Back to Summary</button>
+            <button onClick={() => setMode("view")} className="back-btn">← Back to Summary</button>
           </div>
         )}
 
