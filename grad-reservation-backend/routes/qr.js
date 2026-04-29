@@ -3,11 +3,6 @@ const supabase = require('../lib/supabase');
 
 const router = Router();
 
-/**
- * Returns the event date from env var.
- * Format: YYYY-MM-DD (e.g. "2025-06-15")
- * If not set, defaults to null (unlimited scanning always allowed).
- */
 function getEventDate() {
   return process.env.EVENT_DATE || null;
 }
@@ -57,11 +52,15 @@ router.post('/scan-qr', async (req, res) => {
       return res.json({ inactive: true, scannedAt });
     }
 
-    // Record the scan (new or re-scan)
+    // Record the scan (new, re-scan, or test scan)
     const now        = new Date().toISOString();
+    const isTestScan = !scanned && beforeEvent; // first-time scan before event date
+
+    // For test scans: reset scanned back to false so the QR remains "unused"
+    // until the actual event day. For real/re-scans: mark as scanned normally.
     const updateData = isParent1
-      ? { parent1_scanned: true, parent1_scanned_at: now }
-      : { parent2_scanned: true, parent2_scanned_at: now };
+      ? { parent1_scanned: !isTestScan, parent1_scanned_at: isTestScan ? null : now }
+      : { parent2_scanned: !isTestScan, parent2_scanned_at: isTestScan ? null : now };
 
     const { error: updateError } = await supabase
       .from('registrations')
@@ -73,7 +72,7 @@ router.post('/scan-qr', async (req, res) => {
     res.json({
       success:     true,
       rescan:      scanned && beforeEvent,  // true = this was a re-scan before the event
-      beforeEvent: !scanned && beforeEvent, // true = first-time scan before event date (test scan)
+      beforeEvent: isTestScan,              // true = first-time scan before event date
       scannedAt:   now,
       eventDate:   getEventDate(),
     });

@@ -77,11 +77,15 @@ async function handleScan(req, res) {
       }));
     }
 
-    // Record the scan (new scan or re-scan before event date)
+    // Record the scan (new scan, re-scan, or test scan before event date)
     const now         = new Date().toISOString();
+    const isTestScan  = !alreadyScanned && beforeEvent; // first-time scan before event date
+
+    // For test scans: reset scanned back to false so the QR stays "unused"
+    // until the actual event day. For real/re-scans: mark as scanned normally.
     const updateField = isParent1
-      ? { parent1_scanned: true, parent1_scanned_at: now }
-      : { parent2_scanned: true, parent2_scanned_at: now };
+      ? { parent1_scanned: !isTestScan, parent1_scanned_at: isTestScan ? null : now }
+      : { parent2_scanned: !isTestScan, parent2_scanned_at: isTestScan ? null : now };
 
     const { error: updateError } = await supabase
       .from('registrations')
